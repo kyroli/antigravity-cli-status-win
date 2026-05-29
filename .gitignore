@@ -1,0 +1,15 @@
+# Local antigravity configuration
+.antigravitycli/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Local debug files
+stdin.log
+
+# Rust build output
+target/
+
+# Local Gemini guidelines
+GEMINI.md

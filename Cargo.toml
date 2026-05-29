@@ -1,0 +1,36 @@
+[package]
+name = "agy-statusline"
+version = "1.0.0"
+edition = "2021"
+
+[lib]
+name = "agy_statusline_lib"
+path = "src/lib.rs"
+
+[[bin]]
+name = "statusline"
+path = "src/statusline.rs"
+
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+ureq = { version = "3", features = ["cookies", "json", "platform-verifier"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52", features = [
+    "Win32_Security_Credentials",
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_System_Memory",
+] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+
+
