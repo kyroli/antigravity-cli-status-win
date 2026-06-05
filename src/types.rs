@@ -108,6 +108,8 @@ pub struct CacheData {
     pub lastRefreshed: u64,
     #[serde(default)]
     pub token_hash: Option<String>,
+    #[serde(default)]
+    pub needs_login: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -134,141 +136,19 @@ pub fn parse_input_json(input: &str) -> InputJson {
 }
 
 #[derive(Deserialize, Serialize, Clone)]
-pub struct LayoutConfig {
-    #[serde(default = "default_true")]
-    pub show_state: bool,
-    #[serde(default = "default_true")]
-    pub show_model: bool,
-    #[serde(default = "default_true")]
-    pub show_path: bool,
-    #[serde(default = "default_true")]
-    pub show_vcs: bool,
-    #[serde(default = "default_true")]
-    pub show_quota: bool,
-    #[serde(default = "default_true")]
-    pub show_quota_bar: bool,
-    #[serde(default = "default_true")]
-    pub show_pending_input: bool,
-    #[serde(default = "default_true")]
-    pub show_approval_alert: bool,
-    #[serde(default = "default_true")]
-    pub show_context_bar: bool,
-    #[serde(default = "default_true")]
-    pub show_cache_stats: bool,
-    #[serde(default = "default_true")]
-    pub show_artifacts: bool,
-    #[serde(default = "default_true")]
-    pub show_subagents: bool,
-    #[serde(default = "default_true")]
-    pub show_tasks: bool,
-    #[serde(default = "default_true")]
-    pub show_sandbox: bool,
-    #[serde(default = "default_false")]
-    pub show_conversation_id: bool,
-    #[serde(default = "default_false")]
-    pub show_version: bool,
-    #[serde(default = "default_false")]
-    pub show_plan_tier: bool,
-    #[serde(default = "default_false")]
-    pub show_email: bool,
-}
-
-fn default_true() -> bool { true }
-fn default_false() -> bool { false }
-
-impl Default for LayoutConfig {
-    fn default() -> Self {
-        Self {
-            show_state: true,
-            show_model: true,
-            show_path: true,
-            show_vcs: true,
-            show_quota: true,
-            show_quota_bar: true,
-            show_pending_input: true,
-            show_approval_alert: true,
-            show_context_bar: true,
-            show_cache_stats: true,
-            show_artifacts: true,
-            show_subagents: true,
-            show_tasks: true,
-            show_sandbox: true,
-            show_conversation_id: false,
-            show_version: false,
-            show_plan_tier: false,
-            show_email: false,
-        }
-    }
-}
-
-#[derive(Deserialize, Serialize, Clone)]
-pub struct StatesConfig {
-    #[serde(default = "default_ready")]
-    pub ready: String,
-    #[serde(default = "default_thinking")]
-    pub thinking: String,
-    #[serde(default = "default_working")]
-    pub working: String,
-    #[serde(default = "default_tool_use")]
-    pub tool_use: String,
-    #[serde(default = "default_state")]
-    pub default: String,
-}
-
-fn default_ready() -> String { "\x1b[92m\x1b[1m[READY]\x1b[0m".to_string() }
-fn default_thinking() -> String { "\x1b[93m\x1b[1m[THINKING]\x1b[0m".to_string() }
-fn default_working() -> String { "\x1b[96m\x1b[1m[WORKING]\x1b[0m".to_string() }
-fn default_tool_use() -> String { "\x1b[95m\x1b[1m[TOOL]\x1b[0m".to_string() }
-fn default_state() -> String { "\x1b[97m\x1b[1m[STATE]\x1b[0m".to_string() }
-
-impl Default for StatesConfig {
-    fn default() -> Self {
-        Self {
-            ready: default_ready(),
-            thinking: default_thinking(),
-            working: default_working(),
-            tool_use: default_tool_use(),
-            default: default_state(),
-        }
-    }
-}
-
-#[derive(Deserialize, Serialize, Clone)]
-pub struct ColorsConfig {
-    #[serde(default = "default_color_vcs")]
-    pub vcs: String,
-    #[serde(default = "default_color_path")]
-    pub path: String,
-    #[serde(default = "default_color_model")]
-    pub model: String,
-    #[serde(default = "default_color_border")]
-    pub border: String,
-}
-
-fn default_color_vcs() -> String { "\x1b[94m".to_string() }
-fn default_color_path() -> String { "\x1b[94m".to_string() }
-fn default_color_model() -> String { "\x1b[90m\x1b[3m".to_string() }
-fn default_color_border() -> String { "\x1b[90m".to_string() }
-
-impl Default for ColorsConfig {
-    fn default() -> Self {
-        Self {
-            vcs: default_color_vcs(),
-            path: default_color_path(),
-            model: default_color_model(),
-            border: default_color_border(),
-        }
-    }
-}
-
-#[derive(Deserialize, Serialize, Default, Clone)]
 pub struct UserConfig {
-    #[serde(default)]
-    pub layout: LayoutConfig,
-    #[serde(default)]
-    pub states: StatesConfig,
-    #[serde(default)]
-    pub colors: ColorsConfig,
+    #[serde(default = "default_theme")]
+    pub theme: String,
+}
+
+fn default_theme() -> String { "frost".to_string() }
+
+impl Default for UserConfig {
+    fn default() -> Self {
+        Self {
+            theme: default_theme(),
+        }
+    }
 }
 
 pub fn load_user_config() -> UserConfig {

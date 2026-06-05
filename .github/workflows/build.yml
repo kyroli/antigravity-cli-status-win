@@ -42,7 +42,6 @@ jobs:
         git config --global user.name "github-actions[bot]"
         git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
         copy target\release\statusline.exe .\statusline.exe
-        copy target\release\statusline.exe .\title.exe
-        git add statusline.exe title.exe
+        git add statusline.exe
         git diff --quiet && git diff --staged --quiet || (git commit -m "chore(build): auto-compiled release binaries" && git push)
       shell: cmd

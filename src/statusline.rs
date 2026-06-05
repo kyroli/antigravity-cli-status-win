@@ -1,6 +1,6 @@
 use std::fs;
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 use agy_statusline_lib::{
@@ -113,6 +113,166 @@ fn sha256_hex(data: &str) -> String {
     s
 }
 
+// --- Theme & Visual Enhancement Systems --------------------------------------
+
+struct ResolvedTheme {
+    border: String,
+    label: String,
+    accent: String,
+    success: String,
+    warning: String,
+    critical: String,
+    state_ready: String,
+    state_thinking: String,
+    state_working: String,
+    state_tool_use: String,
+    state_default: String,
+}
+
+impl ResolvedTheme {
+    fn resolve(config: &UserConfig) -> Self {
+        match config.theme.to_lowercase().as_str() {
+            "pastel" => {
+                let border = "\x1b[38;2;88;91;112m".to_string();
+                let label = "\x1b[38;2;205;214;244m".to_string();
+                let accent = "\x1b[38;2;203;166;247m".to_string();
+                let success = "\x1b[38;2;166;227;161m".to_string();
+                let warning = "\x1b[38;2;249;226;175m".to_string();
+                let critical = "\x1b[38;2;243;139;168m".to_string();
+                Self {
+                    state_ready: format!("{}{}[READY]\x1b[0m", success, "\x1b[1m"),
+                    state_thinking: format!("{}{}[THINKING]\x1b[0m", warning, "\x1b[1m"),
+                    state_working: format!("{}{}[WORKING]\x1b[0m", accent, "\x1b[1m"),
+                    state_tool_use: format!("{}{}[TOOL]\x1b[0m", accent, "\x1b[1m"),
+                    state_default: format!("{}{}[STATE]\x1b[0m", label, "\x1b[1m"),
+                    border,
+                    label,
+                    accent,
+                    success,
+                    warning,
+                    critical,
+                }
+            }
+            "neon" => {
+                let border = "\x1b[38;2;59;66;97m".to_string();
+                let label = "\x1b[38;2;169;177;214m".to_string();
+                let accent = "\x1b[38;2;125;207;255m".to_string();
+                let success = "\x1b[38;2;115;218;202m".to_string();
+                let warning = "\x1b[38;2;255;158;100m".to_string();
+                let critical = "\x1b[38;2;247;118;142m".to_string();
+                Self {
+                    state_ready: format!("{}{}[READY]\x1b[0m", success, "\x1b[1m"),
+                    state_thinking: format!("{}{}[THINKING]\x1b[0m", warning, "\x1b[1m"),
+                    state_working: format!("{}{}[WORKING]\x1b[0m", accent, "\x1b[1m"),
+                    state_tool_use: format!("{}{}[TOOL]\x1b[0m", accent, "\x1b[1m"),
+                    state_default: format!("{}{}[STATE]\x1b[0m", label, "\x1b[1m"),
+                    border,
+                    label,
+                    accent,
+                    success,
+                    warning,
+                    critical,
+                }
+            }
+            "frost" => {
+                let border = "\x1b[38;2;76;86;106m".to_string();
+                let label = "\x1b[38;2;216;222;233m".to_string();
+                let accent = "\x1b[38;2;136;192;208m".to_string();
+                let success = "\x1b[38;2;163;190;140m".to_string();
+                let warning = "\x1b[38;2;235;203;139m".to_string();
+                let critical = "\x1b[38;2;191;97;106m".to_string();
+                Self {
+                    state_ready: format!("{}{}[READY]\x1b[0m", success, "\x1b[1m"),
+                    state_thinking: format!("{}{}[THINKING]\x1b[0m", warning, "\x1b[1m"),
+                    state_working: format!("{}{}[WORKING]\x1b[0m", accent, "\x1b[1m"),
+                    state_tool_use: format!("{}{}[TOOL]\x1b[0m", accent, "\x1b[1m"),
+                    state_default: format!("{}{}[STATE]\x1b[0m", label, "\x1b[1m"),
+                    border,
+                    label,
+                    accent,
+                    success,
+                    warning,
+                    critical,
+                }
+            }
+            _ => {
+                let border = String::from("\x1b[90m");
+                let label = String::from("\x1b[37m");
+                let accent = String::from("\x1b[94m");
+                let success = String::from("\x1b[96m");
+                let warning = String::from("\x1b[93m");
+                let critical = "\x1b[91m".to_string();
+                Self {
+                    state_ready: String::from("\x1b[92m\x1b[1m[READY]\x1b[0m"),
+                    state_thinking: String::from("\x1b[93m\x1b[1m[THINKING]\x1b[0m"),
+                    state_working: String::from("\x1b[96m\x1b[1m[WORKING]\x1b[0m"),
+                    state_tool_use: String::from("\x1b[95m\x1b[1m[TOOL]\x1b[0m"),
+                    state_default: String::from("\x1b[97m\x1b[1m[STATE]\x1b[0m"),
+                    border,
+                    label,
+                    accent,
+                    success,
+                    warning,
+                    critical,
+                }
+            }
+        }
+    }
+}
+
+fn get_icon(widget: &str) -> &'static str {
+    match widget {
+        "vcs" => "\u{e0a0} ",
+        "path" => "\u{f07c} ",
+        "quota" => "\u{26a1}",
+        "context" => "\u{f061a} ",
+        "cache" => "\u{f0a0} ",
+        "artifacts" => "\u{f09d1} ",
+        "subagents" => "\u{f06a9} ",
+        "tasks" => "\u{f051b} ",
+        "sandbox" => "\u{f132} ",
+        _ => "",
+    }
+}
+
+fn render_progress_bar(pct: f64, bar_len: usize, color: &str, is_quota: bool) -> String {
+    if bar_len == 0 {
+        return String::new();
+    }
+    let mut bar = String::new();
+    bar.push_str("\x1b[38;2;80;80;80m[");
+    let filled = ((pct / 100.0) * (bar_len as f64)).round() as usize;
+    let filled = std::cmp::min(bar_len, filled);
+    if is_quota {
+        bar.push_str(color);
+        for _ in 0..filled {
+            bar.push('-');
+        }
+        bar.push_str("\x1b[38;2;80;80;80m");
+        for _ in filled..bar_len {
+            bar.push('-');
+        }
+    } else {
+        bar.push_str(color);
+        for i in 0..bar_len {
+            if i < filled {
+                if i == filled - 1 {
+                    bar.push('>');
+                } else {
+                    bar.push('=');
+                }
+            } else {
+                if i == filled {
+                    bar.push_str("\x1b[38;2;80;80;80m");
+                }
+                bar.push('-');
+            }
+        }
+    }
+    bar.push_str("\x1b[38;2;80;80;80m]\x1b[0m");
+    bar
+}
+
 // --- Config Configuration ----------------------------------------------------
 // (Runtime configuration is loaded via load_user_config)
 
@@ -156,6 +316,13 @@ fn w(text: String) -> Widget {
 // --- TUI Layout Rendering ----------------------------------------------------
 
 fn get_model_quota_string(config: &UserConfig, cache: &CacheData, current_model: &str, hide_time: bool) -> String {
+    let theme = ResolvedTheme::resolve(config);
+
+    if cache.needs_login == Some(true) {
+        let icon = get_icon("quota");
+        return format!("{}{}{}\x1b[1m[LOGIN]\x1b[0m", theme.label, icon, theme.warning);
+    }
+
     let clean_name = |n: &str| n.to_lowercase().replace(|c: char| !c.is_alphanumeric(), "");
     let target_clean = clean_name(current_model);
 
@@ -180,50 +347,34 @@ fn get_model_quota_string(config: &UserConfig, cache: &CacheData, current_model:
                         let diff_hours = diff_mins / 60;
                         let diff_days = diff_hours / 24;
 
-                        if diff_days >= 1 {
-                            time_str = format!(" ~{}d{}h", diff_days, diff_hours % 24);
+                        let raw_time = if diff_days >= 1 {
+                            format!("~{}d{}h", diff_days, diff_hours % 24)
                         } else if diff_hours >= 1 {
-                            time_str = format!(" ~{}h{}m", diff_hours, diff_mins % 60);
-                        } else if diff_mins >= 1 {
-                            time_str = format!(" ~{}m", diff_mins);
-                        }
+                            format!("~{}h{}m", diff_hours, diff_mins % 60)
+                        } else {
+                            format!("~{}m", diff_mins)
+                        };
+                        time_str = format!(" {}({})\x1b[0m", theme.label, raw_time);
                     }
                 }
             }
         }
 
-        let color = if pct <= 20 {
-            "\x1b[91m\x1b[1m"
+        let (color, active_color) = if pct <= 20 {
+            (format!("{}{}", theme.critical, "\x1b[1m"), theme.critical.as_str())
         } else if pct <= 50 {
-            "\x1b[93m"
+            (theme.warning.clone(), theme.warning.as_str())
         } else {
-            "\x1b[90m"
+            (theme.success.clone(), theme.success.as_str())
         };
 
-        if config.layout.show_quota_bar {
+        let icon = get_icon("quota");
+        if !hide_time {
             let bar_len = 5;
-            let filled = ((item.remainingFraction * (bar_len as f64)).round() as usize).min(bar_len);
-            let active_color = if pct <= 20 {
-                "\x1b[91m\x1b[1m"
-            } else if pct <= 50 {
-                "\x1b[93m"
-            } else {
-                "\x1b[96m"
-            };
-            let mut bar = String::new();
-            bar.push('[');
-            bar.push_str(active_color);
-            for _ in 0..filled {
-                bar.push('-');
-            }
-            bar.push_str("\x1b[90m");
-            for _ in filled..bar_len {
-                bar.push('-');
-            }
-            bar.push_str("\x1b[0m]");
-            format!("{}q:{}{}\x1b[0m", color, bar, time_str)
+            let bar = render_progress_bar(item.remainingFraction * 100.0, bar_len, active_color, true);
+            format!("{}{}{}{}", theme.label, icon, bar, time_str)
         } else {
-            format!("{}q:{}%{}\x1b[0m", color, pct, time_str)
+            format!("{}{}{}{}%\x1b[0m{}", theme.label, icon, color, pct, time_str)
         }
     } else {
         String::new()
@@ -232,15 +383,16 @@ fn get_model_quota_string(config: &UserConfig, cache: &CacheData, current_model:
 
 fn get_info_widgets(config: &UserConfig, json: &InputJson, cache: &CacheData, step: usize, cols: usize) -> Vec<Widget> {
     let mut list = Vec::new();
+    let theme = ResolvedTheme::resolve(config);
 
-    if config.layout.show_state {
+    if true {
         let state = json.agent_state.as_deref().unwrap_or("idle");
         let state_text = match state {
-            "idle" => &config.states.ready,
-            "thinking" => &config.states.thinking,
-            "working" => &config.states.working,
-            "tool_use" => &config.states.tool_use,
-            _ => &config.states.default,
+            "idle" => &theme.state_ready,
+            "thinking" => &theme.state_thinking,
+            "working" => &theme.state_working,
+            "tool_use" => &theme.state_tool_use,
+            _ => &theme.state_default,
         };
         list.push(w(state_text.clone()));
     }
@@ -249,13 +401,13 @@ fn get_info_widgets(config: &UserConfig, json: &InputJson, cache: &CacheData, st
         if let Some(ref name) = agent.name {
             let name_lower = name.to_lowercase();
             let special_mode = if name_lower.contains("grill") {
-                Some("\x1b[95m\x1b[1m[GRILLME]\x1b[0m".to_string())
+                Some(format!("{}{}[GRILLME]\x1b[0m", theme.critical, "\x1b[1m"))
             } else if name_lower.contains("plan") {
-                Some("\x1b[94m\x1b[1m[PLAN]\x1b[0m".to_string())
+                Some(format!("{}{}[PLAN]\x1b[0m", theme.accent, "\x1b[1m"))
             } else if name_lower.contains("goal") {
-                Some("\x1b[92m\x1b[1m[GOAL]\x1b[0m".to_string())
+                Some(format!("{}{}[GOAL]\x1b[0m", theme.success, "\x1b[1m"))
             } else if name_lower != "default" && name_lower != "main" && !name_lower.is_empty() {
-                Some(format!("\x1b[95m\x1b[1m[{}]\x1b[0m", name.to_uppercase()))
+                Some(format!("{}{}[{}]\x1b[0m", theme.accent, "\x1b[1m", name.to_uppercase()))
             } else {
                 None
             };
@@ -263,31 +415,37 @@ fn get_info_widgets(config: &UserConfig, json: &InputJson, cache: &CacheData, st
                 list.push(w(mode_text));
             }
         }
+        
+        if let Some(ref status) = agent.status {
+            if !status.is_empty() && status != "idle" {
+                list.push(w(format!("{}{}\x1b[0m", theme.accent, status)));
+            }
+        }
     }
 
-    if config.layout.show_approval_alert && json.tool_confirmation_pending.unwrap_or(false) {
-        list.push(w("\x1b[91m\x1b[1m[! PENDING APPROVAL]\x1b[0m".to_string()));
+    if true && json.tool_confirmation_pending.unwrap_or(false) {
+        list.push(w(format!("{}{}[! PENDING APPROVAL]\x1b[0m", theme.critical, "\x1b[1m")));
     }
 
-    if config.layout.show_pending_input {
+    if true {
         let p_input = json.pending_input_count.unwrap_or(0);
         if p_input > 0 {
-            list.push(w(format!("\x1b[93m> {}\x1b[0m", p_input)));
+            list.push(w(format!("{}> {}\x1b[0m", theme.warning, p_input)));
         }
     }
 
     let raw_model = json.model.as_ref().and_then(|m| m.display_name.as_deref()).unwrap_or("");
-    if !raw_model.is_empty() && (config.layout.show_model || config.layout.show_quota) {
-        let q_info = if config.layout.show_quota {
+    if !raw_model.is_empty() && (true || true) {
+        let q_info = if true {
             get_model_quota_string(config, cache, raw_model, step >= 6 || cols < 80)
         } else {
             String::new()
         };
         
-        let show_model_name = config.layout.show_model;
+        let show_model_name = true;
         let mut model_part = if step >= 4 { get_short_model_name(raw_model) } else { raw_model.to_string() };
         
-        if config.layout.show_plan_tier {
+        if true {
             if let Some(ref tier) = json.plan_tier {
                 if !tier.is_empty() {
                     model_part = format!("{} [{}]", model_part, tier);
@@ -296,9 +454,9 @@ fn get_info_widgets(config: &UserConfig, json: &InputJson, cache: &CacheData, st
         }
         
         let text = if show_model_name && !q_info.is_empty() {
-            format!("{}{}\x1b[0m {}|{}\x1b[0m {}", config.colors.model, model_part, config.colors.border, config.colors.border, q_info)
+            format!("{}{}\x1b[0m {}|{}\x1b[0m {}", theme.accent, model_part, theme.border, theme.border, q_info)
         } else if show_model_name {
-            format!("{}{}\x1b[0m", config.colors.model, model_part)
+            format!("{}{}\x1b[0m", theme.accent, model_part)
         } else {
             q_info
         };
@@ -308,16 +466,17 @@ fn get_info_widgets(config: &UserConfig, json: &InputJson, cache: &CacheData, st
     }
 
     let raw_cwd = json.workspace.as_ref().and_then(|w| w.current_dir.as_deref()).or_else(|| json.cwd.as_deref()).unwrap_or("");
-    if config.layout.show_path && !raw_cwd.is_empty() && step < 5 {
+    if true && !raw_cwd.is_empty() && step < 5 {
         let path_text = if step >= 3 {
             raw_cwd.replace('\\', "/").split('/').last().unwrap_or(raw_cwd).to_string()
         } else {
             get_shorten_path(raw_cwd)
         };
-        list.push(w(format!("{}{}\x1b[0m", config.colors.path, path_text)));
+        let icon = get_icon("path");
+        list.push(w(format!("{}{}{}\x1b[0m", theme.label, icon, path_text)));
     }
 
-    if config.layout.show_vcs {
+    if true {
         if let Some(ref vcs) = cache.vcs {
             if vcs.cwd == raw_cwd && !vcs.branch.is_empty() && step < 6 {
                 let mut branch_text = vcs.branch.clone();
@@ -328,7 +487,8 @@ fn get_info_widgets(config: &UserConfig, json: &InputJson, cache: &CacheData, st
                 } else if branch_text.len() > 15 {
                     branch_text = format!("{}..", &branch_text[..12]);
                 }
-                let label = format!("@{}", branch_text);
+                let icon = get_icon("vcs");
+                let label = format!("{}{}", icon, branch_text);
 
                 let mut git_extra = String::new();
                 if vcs.dirty {
@@ -350,12 +510,12 @@ fn get_info_widgets(config: &UserConfig, json: &InputJson, cache: &CacheData, st
 
                 let fmt = if !git_extra.is_empty() {
                     if vcs.dirty {
-                        format!("{}{}\x1b[93m{}\x1b[0m", config.colors.vcs, label, git_extra)
+                        format!("{}{}{}{}\x1b[0m", theme.label, label, theme.warning, git_extra)
                     } else {
-                        format!("{}{}\x1b[90m{}\x1b[0m", config.colors.vcs, label, git_extra)
+                        format!("{}{}{}{}\x1b[0m", theme.label, label, theme.border, git_extra)
                     }
                 } else {
-                    format!("{}{}\x1b[0m", config.colors.vcs, label)
+                    format!("{}{}\x1b[0m", theme.label, label)
                 };
                 list.push(w(fmt));
             }
@@ -363,17 +523,17 @@ fn get_info_widgets(config: &UserConfig, json: &InputJson, cache: &CacheData, st
     }
 
     if step < 2 {
-        if config.layout.show_email {
+        if true {
             if let Some(ref email) = json.email {
                 if !email.is_empty() { list.push(w(email.to_string())); }
             }
         }
-        if config.layout.show_version {
+        if true {
             if let Some(ref ver) = json.version {
                 if !ver.is_empty() { list.push(w(format!("v{}", ver))); }
             }
         }
-        if config.layout.show_conversation_id {
+        if true {
             if let Some(ref cid) = json.conversation_id {
                 if !cid.is_empty() {
                     let limit = std::cmp::min(8, cid.len());
@@ -388,20 +548,21 @@ fn get_info_widgets(config: &UserConfig, json: &InputJson, cache: &CacheData, st
 
 fn get_metric_widgets(config: &UserConfig, json: &InputJson, step: usize) -> Vec<Widget> {
     let mut list = Vec::new();
+    let theme = ResolvedTheme::resolve(config);
 
-    if config.layout.show_context_bar && step < 11 {
+    if true && step < 11 {
         let (bar_len, detail_mode) = if step >= 10 {
             (0, 3)
         } else if step >= 9 {
-            (4, 3)
+            (3, 3)
         } else if step >= 7 {
-            (8, 3)
+            (5, 3)
         } else if step >= 6 {
-            (10, 2)
+            (6, 2)
         } else if step >= 5 {
-            (12, 1)
+            (8, 1)
         } else {
-            (15, 0)
+            (10, 0)
         };
 
         let cw = json.context_window.as_ref();
@@ -421,25 +582,8 @@ fn get_metric_widgets(config: &UserConfig, json: &InputJson, step: usize) -> Vec
             pct
         };
 
-        let bar_color = if pct >= 90.0 { "\x1b[91m" } else if pct >= 60.0 { "\x1b[93m" } else { "\x1b[96m" };
-        let mut bar_text = String::new();
-        if bar_len > 0 {
-            let filled = ((pct / 100.0) * (bar_len as f64)).round() as usize;
-            let filled = std::cmp::min(bar_len, filled);
-            bar_text.push('[');
-            for i in 0..bar_len {
-                if i < filled {
-                    if i == filled - 1 {
-                        bar_text.push_str(&format!("{}=>", bar_color));
-                    } else {
-                        bar_text.push('=');
-                    }
-                } else {
-                    bar_text.push('-');
-                }
-            }
-            bar_text.push_str("\x1b[0m]");
-        }
+        let bar_color = if pct >= 90.0 { theme.critical.as_str() } else if pct >= 60.0 { theme.warning.as_str() } else { theme.accent.as_str() };
+        let bar_text = render_progress_bar(pct, bar_len, bar_color, false);
 
         let mut detail_text = String::new();
         if detail_mode == 0 {
@@ -454,53 +598,59 @@ fn get_metric_widgets(config: &UserConfig, json: &InputJson, step: usize) -> Vec
             detail_text = format!(" ({}/{})", get_human_format(total_used), get_human_format(limit_tok));
         }
 
+        let icon = get_icon("context");
         let full_text = if bar_len > 0 {
-            format!("{}ctx\x1b[0m {} \x1b[97m\x1b[1m{:.1}%\x1b[0m{}{}\x1b[0m", config.colors.border, bar_text, pct, config.colors.border, detail_text)
+            format!("{}{}{}ctx\x1b[0m {} {}{}{:.1}%\x1b[0m{}{}\x1b[0m", theme.label, icon, theme.label, bar_text, theme.accent, "\x1b[1m", pct, theme.label, detail_text)
         } else {
-            format!("{}ctx\x1b[0m \x1b[97m\x1b[1m{:.1}%\x1b[0m", config.colors.border, pct)
+            format!("{}{}{}ctx\x1b[0m {}{}{:.1}%\x1b[0m", theme.label, icon, theme.label, theme.accent, "\x1b[1m", pct)
         };
         list.push(w(full_text));
 
-        if config.layout.show_cache_stats && step < 3 && (cache_read > 0 || cache_create > 0) {
+        if true && step < 3 && (cache_read > 0 || cache_create > 0) {
             let rd_fmt = get_human_format(cache_read);
+            let icon = get_icon("cache");
             let cache_text = if cache_create > 0 {
                 let wr_fmt = get_human_format(cache_create);
-                format!("{}cache\x1b[0m \x1b[97m\x1b[1mrd:{}/wr:{}\x1b[0m", config.colors.border, rd_fmt, wr_fmt)
+                format!("{}{}{}cache\x1b[0m {}{}rd:{}/wr:{}\x1b[0m", theme.label, icon, theme.label, theme.accent, "\x1b[1m", rd_fmt, wr_fmt)
             } else {
-                format!("{}cache\x1b[0m \x1b[97m\x1b[1mrd:{}\x1b[0m", config.colors.border, rd_fmt)
+                format!("{}{}{}cache\x1b[0m {}{}rd:{}\x1b[0m", theme.label, icon, theme.label, theme.accent, "\x1b[1m", rd_fmt)
             };
             list.push(w(cache_text));
         }
     }
 
-    if config.layout.show_artifacts {
+    if true {
         let artifacts = json.artifacts.as_ref().map(|a| a.len()).or(json.artifact_count.map(|c| c as usize)).unwrap_or(0);
         if artifacts > 0 && step < 6 {
-            list.push(w(format!("{}artifacts\x1b[0m \x1b[97m\x1b[1m{}\x1b[0m", config.colors.border, artifacts)));
+            let icon = get_icon("artifacts");
+            list.push(w(format!("{}{}{}artifacts\x1b[0m {}{}{}\x1b[0m", theme.label, icon, theme.label, theme.accent, "\x1b[1m", artifacts)));
         }
     }
 
-    if config.layout.show_subagents {
+    if true {
         let subs = json.subagents.as_ref().map(|s| s.len()).unwrap_or(0);
         if subs > 0 && step < 8 {
-            list.push(w(format!("{}subagents\x1b[0m \x1b[97m\x1b[1m{}\x1b[0m", config.colors.border, subs)));
+            let icon = get_icon("subagents");
+            list.push(w(format!("{}{}{}subagents\x1b[0m {}{}{}\x1b[0m", theme.label, icon, theme.label, theme.accent, "\x1b[1m", subs)));
         }
     }
 
-    if config.layout.show_tasks {
+    if true {
         let tasks = json.background_tasks.as_ref().map(|t| t.len()).or(json.task_count.map(|c| c as usize)).unwrap_or(0);
         if tasks > 0 && step < 8 {
-            list.push(w(format!("{}tasks\x1b[0m \x1b[97m\x1b[1m{}\x1b[0m", config.colors.border, tasks)));
+            let icon = get_icon("tasks");
+            list.push(w(format!("{}{}{}tasks\x1b[0m {}{}{}\x1b[0m", theme.label, icon, theme.label, theme.accent, "\x1b[1m", tasks)));
         }
     }
 
-    if config.layout.show_sandbox {
+    if true {
         if let Some(ref sb) = json.sandbox {
             if sb.enabled.unwrap_or(false) && step < 4 {
+                let icon = get_icon("sandbox");
                 let sb_text = if sb.allow_network.unwrap_or(false) {
-                    format!("{}sandbox\x1b[0m \x1b[92m\x1b[1mON(net)\x1b[0m", config.colors.border)
+                    format!("{}{}{}sandbox\x1b[0m {}{}ON(net)\x1b[0m", theme.label, icon, theme.label, theme.success, "\x1b[1m")
                 } else {
-                    format!("{}sandbox\x1b[0m \x1b[92m\x1b[1mON(no-net)\x1b[0m", config.colors.border)
+                    format!("{}{}{}sandbox\x1b[0m {}{}ON(no-net)\x1b[0m", theme.label, icon, theme.label, theme.success, "\x1b[1m")
                 };
                 list.push(w(sb_text));
             }
@@ -541,6 +691,7 @@ fn get_title_string(json: &InputJson) -> String {
     };
 
     let mut agent_mode = String::new();
+    let mut status_str = String::new();
     if let Some(ref agent) = json.agent {
         if let Some(ref name) = agent.name {
             let name_lower = name.to_lowercase();
@@ -554,16 +705,19 @@ fn get_title_string(json: &InputJson) -> String {
                 agent_mode = format!(" [{}]", name.to_uppercase());
             }
         }
+        if let Some(ref status) = agent.status {
+            if !status.is_empty() && status != "idle" {
+                status_str = format!(" - {}", status);
+            }
+        }
     }
 
-    format!("{}{} {} | {}", emoji, agent_mode, state, workspace)
+    format!("{}{} {}{} | {}", emoji, agent_mode, state, status_str, workspace)
 }
 
 fn render_tui(config: &UserConfig, json: &InputJson, cache: &CacheData) {
-    let title_str = get_title_string(json);
-    print!("\x1b]2;{}\x07", title_str);
-
     let cols = json.terminal_width.unwrap_or(80);
+    let theme = ResolvedTheme::resolve(config);
 
     let max_w = if cols >= 80 { cols - 4 } else { cols - 2 };
     let max_metric_w = if cols >= 80 { cols - 5 } else { cols - 2 };
@@ -586,7 +740,7 @@ fn render_tui(config: &UserConfig, json: &InputJson, cache: &CacheData) {
         (6, 6)
     };
 
-    let sep = format!(" {}|{} ", config.colors.border, config.colors.border);
+    let sep = format!(" {}|{} ", theme.border, theme.border);
 
     let mut single_line_rendered = None;
     if cols >= 160 {
@@ -639,16 +793,16 @@ fn render_tui(config: &UserConfig, json: &InputJson, cache: &CacheData) {
 
     if cols >= 80 {
         if rendered_rows.len() == 1 {
-            println!("{}╭─\x1b[0m {}", config.colors.border, rendered_rows[0]);
+            println!("{}╭─\x1b[0m {}", theme.border, rendered_rows[0]);
         } else if rendered_rows.len() == 2 {
-            println!("{}╭─\x1b[0m {}", config.colors.border, rendered_rows[0]);
-            println!("{}╰─\x1b[0m {}", config.colors.border, rendered_rows[1]);
+            println!("{}╭─\x1b[0m {}", theme.border, rendered_rows[0]);
+            println!("{}╰─\x1b[0m {}", theme.border, rendered_rows[1]);
         } else if rendered_rows.len() > 2 {
-            println!("{}╭─\x1b[0m {}", config.colors.border, rendered_rows[0]);
+            println!("{}╭─\x1b[0m {}", theme.border, rendered_rows[0]);
             for i in 1..rendered_rows.len() - 1 {
-                println!("{}├─\x1b[0m {}", config.colors.border, rendered_rows[i]);
+                println!("{}├─\x1b[0m {}", theme.border, rendered_rows[i]);
             }
-            println!("{}╰─\x1b[0m {}", config.colors.border, rendered_rows[rendered_rows.len() - 1]);
+            println!("{}╰─\x1b[0m {}", theme.border, rendered_rows[rendered_rows.len() - 1]);
         }
     } else {
         for row in rendered_rows {
@@ -690,26 +844,26 @@ fn run_background_refresh(cwd_force: Option<String>) {
     let current_token_hash = token_opt.as_ref().map(|t| sha256_hex(t));
     let token_changed = current_token_hash != existing_cache.token_hash;
 
+    if token_changed {
+        existing_cache.needs_login = None;
+    }
+
     let quota_age = now.saturating_sub(existing_cache.lastRefreshed);
-    let mut need_quota_fetch = existing_cache.quota.is_empty() 
+    let need_quota_fetch = (existing_cache.quota.is_empty() 
         || quota_age > 120 
         || last_config_update > cache_modified_secs
-        || token_changed;
-
-    let mut quota_success = false;
-    let mut quota_list: Vec<QuotaItem> = existing_cache.quota.clone();
+        || token_changed)
+        && token_opt.is_some()
+        && existing_cache.needs_login != Some(true);
 
     if token_opt.is_none() {
-        quota_list.clear();
         existing_cache.token_hash = None;
-        quota_success = true;
+        existing_cache.needs_login = Some(true);
         existing_cache.lastRefreshed = now;
-        need_quota_fetch = false;
+        existing_cache.quota.clear();
     } else if need_quota_fetch {
-        quota_list.clear();
         if let Some(ref token) = token_opt {
             let endpoints = [
-                "https://daily-cloudcode-pa.googleapis.com",
                 "https://cloudcode-pa.googleapis.com",
             ];
 
@@ -726,6 +880,10 @@ fn run_background_refresh(cwd_force: Option<String>) {
                 )
                 .build()
                 .into();
+
+            let mut quota_list: Vec<QuotaItem> = Vec::new();
+            let mut auth_error_occurred = false;
+            let mut fetch_ok = false;
 
             for ep in &endpoints {
                 let res = agent.post(&format!("{}/v1internal:fetchAvailableModels", ep))
@@ -761,19 +919,33 @@ fn run_background_refresh(cwd_force: Option<String>) {
                                             });
                                         }
                                     }
-                                    quota_success = true;
-                                    existing_cache.token_hash = current_token_hash.clone();
+                                    fetch_ok = true;
                                     break;
                                 }
                             }
+                        } else if status == 401 || status == 403 {
+                            auth_error_occurred = true;
+                            break;
                         }
                     }
                     _ => {}
                 }
             }
+
+            if auth_error_occurred {
+                existing_cache.needs_login = Some(true);
+                existing_cache.token_hash = current_token_hash.clone();
+                existing_cache.quota.clear();
+                existing_cache.lastRefreshed = now;
+            } else if fetch_ok {
+                existing_cache.needs_login = Some(false);
+                existing_cache.token_hash = current_token_hash.clone();
+                existing_cache.quota = quota_list;
+                existing_cache.lastRefreshed = now;
+            } else {
+                existing_cache.lastRefreshed = now;
+            }
         }
-    } else {
-        quota_success = true;
     }
 
     let mut git_branch = String::new();
@@ -819,13 +991,6 @@ fn run_background_refresh(cwd_force: Option<String>) {
         }
     }
 
-    if quota_success {
-        existing_cache.quota = quota_list;
-        if need_quota_fetch {
-            existing_cache.lastRefreshed = now;
-        }
-    }
-
     if let Some(cwd) = cwd_force {
         existing_cache.vcs = Some(VcsInfo {
             cwd,
@@ -853,14 +1018,17 @@ fn run_background_refresh(cwd_force: Option<String>) {
 fn run_title_mode() {
     let mut input_data = String::new();
     if std::io::stdin().read_to_string(&mut input_data).is_ok() {
+
         let json = parse_input_json(&input_data);
-        println!("{}", get_title_string(&json));
+        let title_str = get_title_string(&json);
+        println!("{}", title_str);
     }
 }
 
 fn run_statusline_mode() {
     let mut input_data = String::new();
     if std::io::stdin().read_to_string(&mut input_data).is_ok() {
+
         let json = parse_input_json(&input_data);
         let raw_cwd = json.workspace.as_ref().and_then(|w| w.current_dir.clone()).or_else(|| json.cwd.clone()).unwrap_or_default();
         
@@ -926,96 +1094,23 @@ fn run_statusline_mode() {
     }
 }
 
-fn run_configure_mode() {
+
+
+fn set_config_theme(theme_name: &str) {
     let mut config = load_user_config();
-    println!("=== Antigravity CLI Statusline Configuration ===");
-    println!("Please toggle the following settings (y/n):");
-
-    let mut ask_bool = |prompt: &str, current: bool| -> bool {
-        print!("{} (current: {}) [y/n]: ", prompt, if current { "yes" } else { "no" });
-        use std::io::Write;
-        let _ = std::io::stdout().flush();
-        let mut input = String::new();
-        if std::io::stdin().read_line(&mut input).is_ok() {
-            let trimmed = input.trim().to_lowercase();
-            if trimmed == "y" || trimmed == "yes" {
-                true
-            } else if trimmed == "n" || trimmed == "no" {
-                false
-            } else {
-                current
-            }
-        } else {
-            current
-        }
-    };
-
-    config.layout.show_state = ask_bool("Show Agent State", config.layout.show_state);
-    config.layout.show_model = ask_bool("Show Model Name", config.layout.show_model);
-    config.layout.show_path = ask_bool("Show Workspace Directory Path", config.layout.show_path);
-    config.layout.show_vcs = ask_bool("Show Version Control System (VCS/Git)", config.layout.show_vcs);
-    config.layout.show_quota = ask_bool("Show Subscriptions/Timed Quota", config.layout.show_quota);
-    config.layout.show_quota_bar = ask_bool("Show visual Quota Progress Bar", config.layout.show_quota_bar);
-    config.layout.show_pending_input = ask_bool("Show Pending Input count", config.layout.show_pending_input);
-    config.layout.show_approval_alert = ask_bool("Show Approval Pending alert", config.layout.show_approval_alert);
-    config.layout.show_context_bar = ask_bool("Show Context window visual bar", config.layout.show_context_bar);
-    config.layout.show_cache_stats = ask_bool("Show Cache read/write stats", config.layout.show_cache_stats);
-    config.layout.show_artifacts = ask_bool("Show Artifacts count", config.layout.show_artifacts);
-    config.layout.show_subagents = ask_bool("Show Subagents count", config.layout.show_subagents);
-    config.layout.show_tasks = ask_bool("Show Background tasks count", config.layout.show_tasks);
-    config.layout.show_sandbox = ask_bool("Show Sandbox enabled/network status", config.layout.show_sandbox);
-    config.layout.show_conversation_id = ask_bool("Show Conversation ID", config.layout.show_conversation_id);
-    config.layout.show_version = ask_bool("Show statusline/cli version info", config.layout.show_version);
-    config.layout.show_plan_tier = ask_bool("Show Plan Tier", config.layout.show_plan_tier);
-    config.layout.show_email = ask_bool("Show user email address", config.layout.show_email);
-
-    let path = resolve_antigravity_path("statusline.json");
-    if let Ok(json_str) = serde_json::to_string_pretty(&config) {
-        if std::fs::write(&path, json_str).is_ok() {
-            println!("Configuration saved successfully to {:?}", path);
-        } else {
-            println!("Error saving configuration to {:?}", path);
-        }
-    } else {
-        println!("Error serializing configuration.");
-    }
-}
-
-fn toggle_config_field(field: &str) {
-    let mut config = load_user_config();
-    let normalized = field.trim().to_lowercase().replace('_', "").replace('-', "");
-    let mut found = true;
-    let mut new_val = false;
-    match normalized.as_str() {
-        "state" | "showstate" => { config.layout.show_state = !config.layout.show_state; new_val = config.layout.show_state; }
-        "model" | "showmodel" => { config.layout.show_model = !config.layout.show_model; new_val = config.layout.show_model; }
-        "path" | "showpath" => { config.layout.show_path = !config.layout.show_path; new_val = config.layout.show_path; }
-        "vcs" | "showvcs" => { config.layout.show_vcs = !config.layout.show_vcs; new_val = config.layout.show_vcs; }
-        "quota" | "showquota" => { config.layout.show_quota = !config.layout.show_quota; new_val = config.layout.show_quota; }
-        "quotabar" | "showquotabar" => { config.layout.show_quota_bar = !config.layout.show_quota_bar; new_val = config.layout.show_quota_bar; }
-        "pendinginput" | "showpendinginput" => { config.layout.show_pending_input = !config.layout.show_pending_input; new_val = config.layout.show_pending_input; }
-        "approvalalert" | "showapprovalalert" => { config.layout.show_approval_alert = !config.layout.show_approval_alert; new_val = config.layout.show_approval_alert; }
-        "contextbar" | "showcontextbar" => { config.layout.show_context_bar = !config.layout.show_context_bar; new_val = config.layout.show_context_bar; }
-        "cachestats" | "showcachestats" => { config.layout.show_cache_stats = !config.layout.show_cache_stats; new_val = config.layout.show_cache_stats; }
-        "artifacts" | "showartifacts" => { config.layout.show_artifacts = !config.layout.show_artifacts; new_val = config.layout.show_artifacts; }
-        "subagents" | "showsubagents" => { config.layout.show_subagents = !config.layout.show_subagents; new_val = config.layout.show_subagents; }
-        "tasks" | "showtasks" => { config.layout.show_tasks = !config.layout.show_tasks; new_val = config.layout.show_tasks; }
-        "sandbox" | "showsandbox" => { config.layout.show_sandbox = !config.layout.show_sandbox; new_val = config.layout.show_sandbox; }
-        "conversationid" | "showconversationid" => { config.layout.show_conversation_id = !config.layout.show_conversation_id; new_val = config.layout.show_conversation_id; }
-        "version" | "showversion" => { config.layout.show_version = !config.layout.show_version; new_val = config.layout.show_version; }
-        "plantier" | "showplantier" => { config.layout.show_plan_tier = !config.layout.show_plan_tier; new_val = config.layout.show_plan_tier; }
-        "email" | "showemail" => { config.layout.show_email = !config.layout.show_email; new_val = config.layout.show_email; }
-        _ => found = false,
-    }
-
-    if found {
+    let theme_lower = theme_name.trim().to_lowercase();
+    let valid = matches!(theme_lower.as_str(), "frost" | "pastel" | "neon" | "custom");
+    if valid {
+        config.theme = theme_lower;
         let path = resolve_antigravity_path("statusline.json");
         if let Ok(json_str) = serde_json::to_string_pretty(&config) {
             let _ = std::fs::write(&path, json_str);
-            println!("Toggled field '{}' to: {}", field, if new_val { "enabled" } else { "disabled" });
+            println!("Theme set to: '{}'", theme_name);
+        } else {
+            println!("Error serializing configuration.");
         }
     } else {
-        println!("Unknown layout field: '{}'", field);
+        println!("Unknown theme name: '{}'. Valid options are: 'frost', 'pastel', 'neon', 'custom'.", theme_name);
     }
 }
 
@@ -1024,24 +1119,18 @@ fn toggle_config_field(field: &str) {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
 
-    if args.contains(&"--configure".to_string()) || args.contains(&"--config".to_string()) {
-        run_configure_mode();
-        return;
-    }
 
-    if let Some(idx) = args.iter().position(|a| a == "--toggle") {
+
+    if let Some(idx) = args.iter().position(|a| a == "--theme") {
         if idx + 1 < args.len() {
-            toggle_config_field(&args[idx + 1]);
+            set_config_theme(&args[idx + 1]);
             return;
         }
     }
+
+
     
-    let is_title = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.file_stem().map(|s| s.to_owned()))
-        .and_then(|s| s.into_string().ok())
-        .map(|s| s.eq_ignore_ascii_case("title"))
-        .unwrap_or(false) || args.contains(&"--title".to_string());
+    let is_title = args.contains(&"--title".to_string());
 
     if is_title {
         run_title_mode();

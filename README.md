@@ -6,15 +6,15 @@ TUI statusline and window title formatter for Antigravity CLI on Windows 11, imp
 
 ```text
 # Single-line layout (Terminal width >= 160 columns)
-╭─ [READY] | Gemini 3.5 Flash (Medium) | q:85% ~3h12m | /path/to/my-project | @main* | ctx [=>-----------] 14.8% (148.0K/1.0M) | artifacts 4
+╭─ [READY] | Gemini 3.5 Flash | ⚡ [-----] (~3h12m) |  /path/to/my-project |  main* | 󰘚 [========>-] 14.8% (148.0K/1.0M) |  rd:115.8K/wr:0 | 󰧑 4 | 󰚩 1 | 󰔛 2
 
 # Double-line layout (Terminal width >= 80 columns)
-╭─ [READY] | Claude Sonnet 3.5 (Thinking) | my-project | @main*
-╰─ ctx [=>-----------] 14.8% (148.0K/1.0M | in:100.0K/out:48.0K) | cache rd:115.8K/wr:0 | artifacts 4
+╭─ [READY] | Claude Sonnet 3.5 | ⚡ [-----] (~3h12m) |  my-project |  main*
+╰─ 󰘚 [====>---] 65.0% (free:35.0%/350.0K) |  rd:115.8K/wr:0 | 󰧑 4
 
 # Compact layout (Terminal width < 80 columns)
-[THINKING] | Sonnet 3.5 (Th) | q:[-----]
-ctx [==>-----] 25.3%
+[THINKING] | Sonnet 3.5 | ⚡ 65%
+󰘚 [====>-] 65.0% (650.0K/1.0M)
 
 # Window title output
 😴 idle | my-project
@@ -36,62 +36,39 @@ Integration into the CLI utilizes the following fields in `settings.json`:
 
 ```json
 {
+  "...": "...",
   "statusLine": {
     "type": "command",
-    "command": "C:/path/to/statusline.exe"
+    "command": "C:/path/to/statusline.exe",
+    "enabled": true
   },
   "title": {
     "type": "command",
-    "command": "C:/path/to/statusline.exe --title"
+    "command": "C:/path/to/statusline.exe --title",
+    "enabled": true
   }
 }
 ```
 
-The executable runs in title formatting mode if the filename matches `title.exe` or if the `--title` argument is passed.
+The executable runs in title formatting mode when the `--title` argument is passed.
 
-### 2. Widget Options (`~/.gemini/antigravity-cli/statusline/statusline.json`)
+### 2. Theme Configuration (`~/.gemini/antigravity-cli/statusline/statusline.json`)
 
-The layout, state display strings, and color schemes are defined in `statusline.json`.
+The application utilizes an opinionated zero-configuration design. Layout elements, padding, and state indicators are dynamically computed based on the active terminal column width.
 
-#### Layout Configuration (`layout` field)
+Theme selection is the only configurable parameter.
 
-| Parameter | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `show_state` | boolean | `true` | Renders agent execution state |
-| `show_model` | boolean | `true` | Renders configured model name |
-| `show_path` | boolean | `true` | Renders current directory path |
-| `show_vcs` | boolean | `true` | Renders Git repository status |
-| `show_quota` | boolean | `true` | Renders model API quota usage |
-| `show_quota_bar` | boolean | `true` | Renders progress bar for API quota |
-| `show_pending_input` | boolean | `true` | Renders pending user input count |
-| `show_approval_alert` | boolean | `true` | Renders warning alert when awaiting approval |
-| `show_context_bar` | boolean | `true` | Renders progress bar for context window utilization |
-| `show_cache_stats` | boolean | `true` | Renders context cache reads/writes metrics |
-| `show_artifacts` | boolean | `true` | Renders artifact count |
-| `show_subagents` | boolean | `true` | Renders active subagent count |
-| `show_tasks` | boolean | `true` | Renders active background tasks |
-| `show_sandbox` | boolean | `true` | Renders sandbox network status indicators |
-| `show_conversation_id` | boolean | `false` | Renders conversation ID |
-| `show_version` | boolean | `false` | Renders application version |
-| `show_plan_tier` | boolean | `false` | Renders active plan tier |
-| `show_email` | boolean | `false` | Renders user email |
+```json
+{
+  "theme": "frost"
+}
+```
 
-#### Agent States (`states` field)
+#### Available Themes
 
-Maps the execution state value to an ANSI escape sequence string:
-- `ready`: Default is `\x1b[92m\x1b[1m[READY]\x1b[0m`
-- `thinking`: Default is `\x1b[93m\x1b[1m[THINKING]\x1b[0m`
-- `working`: Default is `\x1b[96m\x1b[1m[WORKING]\x1b[0m`
-- `tool_use`: Default is `\x1b[95m\x1b[1m[TOOL]\x1b[0m`
-- `default`: Default is `\x1b[97m\x1b[1m[STATE]\x1b[0m`
-
-#### Color Configuration (`colors` field)
-
-Configures the ANSI escape sequences for text segments:
-- `vcs`: Default is `\x1b[94m`
-- `path`: Default is `\x1b[94m`
-- `model`: Default is `\x1b[90m\x1b[3m`
-- `border`: Default is `\x1b[90m`
+- `"frost"` (Default): Truecolor palette specifying cold blue and frost accents.
+- `"pastel"`: Truecolor palette specifying pastel pink and mauve accents.
+- `"neon"`: Truecolor palette specifying high-contrast neon cyan, green, and orange accents.
 
 ## Compilation & Execution
 
@@ -105,8 +82,7 @@ Output binary: `target/release/statusline.exe`
 
 ### Command Line Interface
 
-- `--configure` or `--config`: Opens terminal prompts to write configuration changes to `statusline.json`.
-- `--toggle <field>`: Inverts the Boolean layout flag for the specified field.
+- `--theme <name>`: Configures the visual theme (`"frost"`, `"pastel"`, `"neon"`).
 - `--title`: Renders the terminal title string.
 - `--refresh [--cwd <path>]`: Executes background caching of VCS and quota queries.
 
@@ -123,7 +99,7 @@ gh attestation verify statusline.exe --repo <github-username>/<repository-name>
 
 ## Legacy JS Version
 
-The legacy JavaScript implementation is archived in the `legacy-js` directory.
+The legacy JavaScript implementation is removed.
 
 ## References
 

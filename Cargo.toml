@@ -15,7 +15,7 @@ path = "src/statusline.rs"
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-ureq = { version = "3", features = ["cookies", "json", "platform-verifier"] }
+ureq = { version = "3", features = ["json", "platform-verifier"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.52", features = [

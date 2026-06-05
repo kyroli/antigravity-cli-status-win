@@ -1,6 +1,6 @@
 use std::fs;
 use crate::types::{CacheData, QuotaItem, VcsInfo};
-use crate::utils::get_antigravity_roots;
+use crate::utils::get_antigravity_dir;
 
 // --- Helper Functions for String/Byte Conversion in IPC ----------------------
 fn bytes_to_str(bytes: &[u8]) -> String {
@@ -94,22 +94,20 @@ pub fn get_access_token() -> Option<String> {
         }
     }
 
-    let roots = get_antigravity_roots();
-    for root in roots {
-        let oauth_path = root.join("antigravity-oauth-token");
-        if let Ok(data) = fs::read_to_string(oauth_path) {
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&data) {
-                if let Some(tok) = v.get("token").and_then(|t| t.get("access_token")).and_then(|s| s.as_str()) {
-                    return Some(tok.to_string());
-                }
+    let root = get_antigravity_dir();
+    let oauth_path = root.join("antigravity-oauth-token");
+    if let Ok(data) = fs::read_to_string(oauth_path) {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&data) {
+            if let Some(tok) = v.get("token").and_then(|t| t.get("access_token")).and_then(|s| s.as_str()) {
+                return Some(tok.to_string());
             }
         }
-        let parent_oauth = root.parent().unwrap().join("oauth_creds.json");
-        if let Ok(data) = fs::read_to_string(parent_oauth) {
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&data) {
-                if let Some(tok) = v.get("access_token").and_then(|s| s.as_str()) {
-                    return Some(tok.to_string());
-                }
+    }
+    let parent_oauth = root.parent().unwrap().join("oauth_creds.json");
+    if let Ok(data) = fs::read_to_string(parent_oauth) {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&data) {
+            if let Some(tok) = v.get("access_token").and_then(|s| s.as_str()) {
+                return Some(tok.to_string());
             }
         }
     }
@@ -201,6 +199,7 @@ pub struct SharedCacheData {
     pub quotas: [SharedQuotaItem; 16],
     pub has_vcs: u8,
     pub vcs: SharedVcsInfo,
+    pub needs_login: u8,
 }
 
 impl SharedCacheData {
@@ -228,11 +227,18 @@ impl SharedCacheData {
             lastChecked: self.vcs.last_checked,
         });
 
+        let needs_login = match self.needs_login {
+            1 => Some(true),
+            2 => Some(false),
+            _ => None,
+        };
+
         CacheData {
             quota,
             vcs,
             lastRefreshed: self.last_refreshed,
             token_hash: None,
+            needs_login,
         }
     }
 
@@ -280,14 +286,21 @@ impl SharedCacheData {
             0
         };
 
+        let needs_login_val = match data.needs_login {
+            Some(true) => 1,
+            Some(false) => 2,
+            None => 0,
+        };
+
         SharedCacheData {
             magic: 0x41475953,
-            version: 1,
+            version: 2,
             last_refreshed: data.lastRefreshed,
             quota_count: quota_count as u32,
             quotas,
             has_vcs,
             vcs: vcs_info,
+            needs_login: needs_login_val,
         }
     }
 }
@@ -317,7 +330,7 @@ pub fn read_shared_cache() -> Option<CacheData> {
         }
         let shared_data = &*(view.Value as *const SharedCacheData);
         let mut result = None;
-        if shared_data.magic == 0x41475953 && shared_data.version == 1 {
+        if shared_data.magic == 0x41475953 && shared_data.version == 2 {
             result = Some(shared_data.to_cache_data());
         }
         UnmapViewOfFile(view);

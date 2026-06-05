@@ -2,36 +2,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-pub fn get_antigravity_roots() -> Vec<PathBuf> {
+pub fn get_antigravity_dir() -> PathBuf {
     let home = std::env::var("USERPROFILE")
-        .or_else(|_| std::env::var("HOME"))
-        .unwrap_or_default();
-    
-    let mut roots = Vec::new();
-    if !home.is_empty() {
-        roots.push(PathBuf::from(&home).join(".gemini").join("antigravity-cli"));
-    }
-    
-    if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
-        roots.push(PathBuf::from(xdg).join("antigravity-cli"));
-    }
-    if let Ok(appdata) = std::env::var("APPDATA") {
-        roots.push(PathBuf::from(appdata).join("antigravity-cli"));
-    }
-    if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
-        roots.push(PathBuf::from(localappdata).join("antigravity-cli"));
-    }
-    
-    roots
+        .unwrap_or_else(|_| std::env::var("HOME").unwrap_or_default());
+    PathBuf::from(&home).join(".gemini").join("antigravity-cli")
 }
 
 pub fn resolve_antigravity_path(filename: &str) -> PathBuf {
-    let roots = get_antigravity_roots();
-    let dir = if !roots.is_empty() {
-        roots[0].join("statusline")
-    } else {
-        PathBuf::from("statusline")
-    };
+    let dir = get_antigravity_dir().join("statusline");
     if !dir.exists() {
         let _ = std::fs::create_dir_all(&dir);
     }
@@ -129,16 +107,14 @@ fn get_file_mtime(path: &Path) -> Option<u64> {
 
 pub fn get_configs_last_modified_time() -> u64 {
     let mut max_mtime = 0;
-    let roots = get_antigravity_roots();
-    for root in roots {
-        if let Some(mtime) = get_file_mtime(&root.join("antigravity-oauth-token")) {
-            max_mtime = max_mtime.max(mtime);
-        }
+    let dir = get_antigravity_dir();
+    if let Some(mtime) = get_file_mtime(&dir.join("antigravity-oauth-token")) {
+        max_mtime = max_mtime.max(mtime);
+    }
 
-        if let Some(parent) = root.parent() {
-            if let Some(mtime) = get_file_mtime(&parent.join("oauth_creds.json")) {
-                max_mtime = max_mtime.max(mtime);
-            }
+    if let Some(parent) = dir.parent() {
+        if let Some(mtime) = get_file_mtime(&parent.join("oauth_creds.json")) {
+            max_mtime = max_mtime.max(mtime);
         }
     }
     max_mtime

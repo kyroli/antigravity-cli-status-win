@@ -13,3 +13,6 @@ target/
 
 # Local Gemini guidelines
 GEMINI.md
+
+# Documentation output or submodules
+docs/
