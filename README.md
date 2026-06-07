@@ -6,10 +6,10 @@ TUI statusline and window title formatter for Antigravity CLI on Windows 11, imp
 
 ```text
 # Single-line layout (Terminal width >= 160 columns)
-╭─ [READY] | Gemini 3.5 Flash | ⚡ [-----] (~3h12m) |  /path/to/my-project |  main* | 󰘚 [========>-] 14.8% (148.0K/1.0M) |  rd:115.8K/wr:0 | 󰧑 4 | 󰚩 1 | 󰔛 2
+╭─ [READY] | Gemini 3.5 Flash | ⚡ [-----] (~3h12m) |  /path/to/my-project |  main* (+12/-5) | 󰘚 [========>-] 14.8% (148.0K/1.0M) |  rd:115.8K/wr:0 | 󰧑 4 | 󰚩 1 | 󰔛 2
 
 # Double-line layout (Terminal width >= 80 columns)
-╭─ [READY] | Claude Sonnet 3.5 | ⚡ [-----] (~3h12m) |  my-project |  main*
+╭─ [READY] | Claude Sonnet 3.5 | ⚡ [-----] (~3h12m) |  my-project |  main* (+12/-5)
 ╰─ 󰘚 [====>---] 65.0% (free:35.0%/350.0K) |  rd:115.8K/wr:0 | 󰧑 4
 
 # Compact layout (Terminal width < 80 columns)
@@ -20,12 +20,16 @@ TUI statusline and window title formatter for Antigravity CLI on Windows 11, imp
 😴 idle | my-project
 ```
 
+*Note: Directory paths and Git branch badges embed OSC8 escape sequences to enable terminal-based hyperlinks redirection.*
+
 ## Technical Architecture
 
 - **Native Binary**: Compiled with size optimization flags (`opt-level = "z"`, Link-Time Optimization, and stripped symbols).
-- **Inter-Process Communication**: Uses Windows Shared Memory (`CreateFileMappingW`) and Named Mutexes (`CreateMutexW`) for synchronization and cached data sharing between rendering calls and background updates.
+- **Inter-Process Communication**: Uses Windows Shared Memory (`CreateFileMappingW`) and Named Mutexes (`CreateMutexW`) for synchronization and cached data sharing between rendering calls and background updates. The IPC structure (`SharedVcsInfo`) uses a fixed memory layout (`#[repr(C)]`) and version identification (protocol version `5`).
+- **Foreground Change Detection**: Performs fast checks on `.git/HEAD` and `.git/index` modification times (`mtime`) in the foreground process. Skips background refresh process execution if the file status matches the cached state and the entry age is below the 10-second Time-To-Live (TTL) threshold.
 - **Layout Selection**: Switches output formatting between single-line, double-line, and compact views based on the terminal column count.
-- **VCS & Subscription Queries**: Queries Git status (branch, modified status, ahead/behind counts) and checks model subscription quotas via background execution.
+- **VCS & Subscription Queries**: Queries Git status (branch, modified status, ahead/behind counts, insertions, and deletions) and checks model subscription quotas via background execution.
+- **Terminal Hyperlinks**: Emits OSC8 escape sequences for active directory paths and Git remote URLs, mapping clicks to local directory navigation or web-based repository redirection. Visual width calculations employ a parser state machine to ignore non-printing control sequences.
 - **Credential Storage Access**: Reads authentication tokens via the Win32 `CredReadW` API or falls back to local files.
 
 ## Configuration
