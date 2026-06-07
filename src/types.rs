@@ -103,6 +103,16 @@ pub struct VcsInfo {
     pub modified: u32,
     #[serde(rename = "lastChecked")]
     pub last_checked: u64,
+    #[serde(default, rename = "headMtime")]
+    pub head_mtime: Option<u64>,
+    #[serde(default, rename = "indexMtime")]
+    pub index_mtime: Option<u64>,
+    #[serde(default, rename = "remoteWebUrl")]
+    pub remote_web_url: Option<String>,
+    #[serde(default)]
+    pub insertions: u32,
+    #[serde(default)]
+    pub deletions: u32,
 }
 
 #[derive(Deserialize, Serialize, Default, Clone)]

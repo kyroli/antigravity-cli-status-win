@@ -157,47 +157,75 @@ fn collect_git_status(cwd: &str, now: u64, cache: &mut CacheData) {
         return;
     }
 
+    // Find the Git directory and check HEAD & index modified times
+    let git_dir = crate::path::find_git_dir(cwd);
+    let head_mtime = git_dir.as_ref().and_then(|gd| crate::path::get_file_mtime(&gd.join("HEAD")));
+    let index_mtime = git_dir.as_ref().and_then(|gd| crate::path::get_file_mtime(&gd.join("index")));
+
+    // If mtime hasn't changed, reuse the cached Git state to avoid launching expensive subprocesses
+    if let Some(ref existing_vcs) = cache.vcs {
+        if existing_vcs.cwd == cwd
+            && existing_vcs.head_mtime == head_mtime
+            && existing_vcs.index_mtime == index_mtime
+            && head_mtime.is_some()
+            && index_mtime.is_some()
+        {
+            if let Some(ref mut vcs) = cache.vcs {
+                vcs.last_checked = now;
+            }
+            return;
+        }
+    }
+
     let mut git_branch = String::new();
     let mut git_dirty = false;
     let mut git_ahead = 0u32;
     let mut git_behind = 0u32;
     let mut git_modified = 0u32;
+    let mut remote_web_url = None;
+    let mut insertions = 0u32;
+    let mut deletions = 0u32;
 
     if let Some(branch) = get_git_branch_fast(cwd) {
         git_branch = branch;
-        if let Ok(status_out) = Command::new("git")
-            .env("GIT_OPTIONAL_LOCKS", "0")
-            .args(["status", "--porcelain"])
-            .current_dir(cwd)
-            .output()
-        {
-            let clean_status = String::from_utf8_lossy(&status_out.stdout);
-            let count = clean_status
-                .lines()
-                .filter(|l| !l.trim().is_empty())
-                .count() as u32;
+
+        // 1. Git Status
+        if let Some(status_str) = run_git_cmd(&["--no-optional-locks", "status", "--porcelain"], cwd) {
+            let count = status_str.lines().filter(|l| !l.trim().is_empty()).count() as u32;
             git_dirty = count > 0;
             git_modified = count;
         }
 
-        if let Ok(rev_out) = Command::new("git")
-            .env("GIT_OPTIONAL_LOCKS", "0")
-            .args(["rev-list", "--left-right", "--count", "HEAD...@{u}"])
-            .current_dir(cwd)
-            .output()
-        {
-            if rev_out.status.success() {
-                let output_str = String::from_utf8_lossy(&rev_out.stdout).trim().to_string();
-                let parts: Vec<&str> = output_str.split_whitespace().collect();
-                if parts.len() == 2 {
-                    if let Ok(a) = parts[0].parse::<u32>() {
-                        git_ahead = a;
-                    }
-                    if let Ok(b) = parts[1].parse::<u32>() {
-                        git_behind = b;
-                    }
+        // 2. Ahead/Behind
+        if let Some(rev_str) = run_git_cmd(&["--no-optional-locks", "rev-list", "--left-right", "--count", "HEAD...@{u}"], cwd) {
+            let parts: Vec<&str> = rev_str.split_whitespace().collect();
+            if parts.len() == 2 {
+                if let Ok(a) = parts[0].parse::<u32>() {
+                    git_ahead = a;
+                }
+                if let Ok(b) = parts[1].parse::<u32>() {
+                    git_behind = b;
                 }
             }
+        }
+
+        // 3. Remote URL
+        if let Some(remote_url_raw) = run_git_cmd(&["--no-optional-locks", "config", "--get", "remote.origin.url"], cwd) {
+            remote_web_url = parse_git_remote_url(&remote_url_raw);
+        }
+
+        // 4. Insertions & Deletions (Unstaged)
+        if let Some(diff_str) = run_git_cmd(&["--no-optional-locks", "diff", "--numstat"], cwd) {
+            let (ins, del) = parse_numstat(&diff_str);
+            insertions += ins;
+            deletions += del;
+        }
+
+        // 5. Insertions & Deletions (Staged)
+        if let Some(cached_diff_str) = run_git_cmd(&["--no-optional-locks", "diff", "--cached", "--numstat"], cwd) {
+            let (ins, del) = parse_numstat(&cached_diff_str);
+            insertions += ins;
+            deletions += del;
         }
     }
 
@@ -209,5 +237,75 @@ fn collect_git_status(cwd: &str, now: u64, cache: &mut CacheData) {
         behind: git_behind,
         modified: git_modified,
         last_checked: now,
+        head_mtime,
+        index_mtime,
+        remote_web_url,
+        insertions,
+        deletions,
     });
+}
+
+fn run_git_cmd(args: &[&str], cwd: &str) -> Option<String> {
+    let mut cmd = Command::new("git");
+    cmd.args(args).current_dir(cwd);
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    let output = cmd.output().ok()?;
+    if output.status.success() {
+        Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    } else {
+        None
+    }
+}
+
+fn parse_git_remote_url(url: &str) -> Option<String> {
+    let url = url.trim();
+    if url.is_empty() {
+        return None;
+    }
+
+    if url.starts_with("https://") || url.starts_with("http://") {
+        let mut clean = url;
+        if clean.ends_with(".git") {
+            clean = &clean[..clean.len() - 4];
+        }
+        return Some(clean.to_string());
+    }
+
+    if url.contains('@') && url.contains(':') {
+        if let Some(colon_idx) = url.find(':') {
+            let host_part = &url[..colon_idx];
+            let path_part = &url[colon_idx + 1..];
+            let host = host_part.split('@').last().unwrap_or(host_part);
+            let mut path = path_part;
+            if path.ends_with(".git") {
+                path = &path[..path.len() - 4];
+            }
+            return Some(format!("https://{}/{}", host, path.replace('\\', "/")));
+        }
+    }
+
+    None
+}
+
+fn parse_numstat(output: &str) -> (u32, u32) {
+    let mut insertions = 0;
+    let mut deletions = 0;
+    for line in output.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() >= 2 {
+            if let Ok(ins) = parts[0].parse::<u32>() {
+                insertions += ins;
+            }
+            if let Ok(del) = parts[1].parse::<u32>() {
+                deletions += del;
+            }
+        }
+    }
+    (insertions, deletions)
 }

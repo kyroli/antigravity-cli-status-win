@@ -111,7 +111,19 @@ fn run_statusline_mode() {
             } else {
                 let quota_age = now.saturating_sub(cache.last_refreshed);
                 let vcs_age = now.saturating_sub(vcs_last_checked);
-                quota_age > 120 || vcs_age > 3
+
+                // Fetch HEAD & index modified times directly in cli.rs
+                let git_dir = crate::path::find_git_dir(&raw_cwd);
+                let head_mtime = git_dir.as_ref().and_then(|gd| crate::path::get_file_mtime(&gd.join("HEAD")));
+                let index_mtime = git_dir.as_ref().and_then(|gd| crate::path::get_file_mtime(&gd.join("index")));
+
+                let mtime_changed = if let Some(ref v) = cache.vcs {
+                    v.head_mtime != head_mtime || v.index_mtime != index_mtime
+                } else {
+                    true
+                };
+
+                quota_age > 120 || mtime_changed || vcs_age > 10
             }
         };
 

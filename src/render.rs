@@ -183,7 +183,14 @@ fn get_info_widgets(theme: &Theme, json: &InputJson, cache: &CacheData, step: us
             get_shorten_path(raw_cwd)
         };
         let icon = theme::get_icon("path");
-        list.push(Widget::new(format!("{}{}{}{}", p.label, icon, path_text, RESET)));
+        let formatted_cwd = raw_cwd.replace('\\', "/");
+        let file_url = if formatted_cwd.starts_with('/') {
+            format!("file://{}", formatted_cwd)
+        } else {
+            format!("file:///{}", formatted_cwd)
+        };
+        let linked_text = format!("\x1b]8;;{}\x1b\\{}{}\x1b]8;;\x1b\\", file_url, icon, path_text);
+        list.push(Widget::new(format!("{}{}{}", p.label, linked_text, RESET)));
     }
 
     // VCS branch
@@ -199,7 +206,13 @@ fn get_info_widgets(theme: &Theme, json: &InputJson, cache: &CacheData, step: us
                 branch_text = format!("{}..", branch_text.chars().take(12).collect::<String>());
             }
             let icon = theme::get_icon("vcs");
-            let label = format!("{}{}", icon, branch_text);
+
+            let label = if let Some(ref remote_url) = vcs.remote_web_url {
+                let branch_url = format!("{}/tree/{}", remote_url, vcs.branch);
+                format!("\x1b]8;;{}\x1b\\{}{}\x1b]8;;\x1b\\", branch_url, icon, branch_text)
+            } else {
+                format!("{}{}", icon, branch_text)
+            };
 
             let mut git_extra = String::new();
             if vcs.dirty {
@@ -208,6 +221,16 @@ fn get_info_widgets(theme: &Theme, json: &InputJson, cache: &CacheData, step: us
                 } else {
                     git_extra.push('*');
                 }
+            }
+            if step < 4 && (vcs.insertions > 0 || vcs.deletions > 0) {
+                let mut diff_parts = Vec::new();
+                if vcs.insertions > 0 {
+                    diff_parts.push(format!("+{}", vcs.insertions));
+                }
+                if vcs.deletions > 0 {
+                    diff_parts.push(format!("-{}", vcs.deletions));
+                }
+                git_extra.push_str(&format!(" ({})", diff_parts.join("/")));
             }
             if step < 4 {
                 if vcs.ahead > 0 && vcs.behind > 0 {

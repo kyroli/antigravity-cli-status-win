@@ -100,7 +100,7 @@ pub fn get_shorten_path(path_val: &str) -> String {
     display_path
 }
 
-fn get_file_mtime(path: &Path) -> Option<u64> {
+pub fn get_file_mtime(path: &Path) -> Option<u64> {
     if !path.exists() {
         return None;
     }
@@ -245,39 +245,22 @@ pub fn get_short_model_name(raw_name: &str) -> String {
 
 // --- Fast git branch detection -----------------------------------------------
 
-pub fn get_git_branch_fast(cwd: &str) -> Option<String> {
+pub fn find_git_dir(cwd: &str) -> Option<PathBuf> {
     let mut current = Path::new(cwd);
     loop {
         let git_dir = current.join(".git");
         if git_dir.exists() {
             if git_dir.is_dir() {
-                let head_path = git_dir.join("HEAD");
-                if let Ok(content) = fs::read_to_string(head_path) {
-                    let line = content.lines().next()?.trim();
-                    if let Some(ref_path) = line.strip_prefix("ref: refs/heads/") {
-                        return Some(ref_path.to_string());
-                    } else {
-                        return Some(line.chars().take(8).collect::<String>());
-                    }
-                }
+                return Some(git_dir);
             } else if git_dir.is_file() {
                 if let Ok(content) = fs::read_to_string(&git_dir) {
                     if let Some(gitdir_line) = content.lines().next() {
                         if let Some(gitdir_path) = gitdir_line.trim().strip_prefix("gitdir: ") {
                             let path = Path::new(gitdir_path.trim());
-                            let abs_gitdir = if path.is_absolute() {
-                                path.to_path_buf()
+                            if path.is_absolute() {
+                                return Some(path.to_path_buf());
                             } else {
-                                current.join(path)
-                            };
-                            let head_path = abs_gitdir.join("HEAD");
-                            if let Ok(head_content) = fs::read_to_string(head_path) {
-                                let line = head_content.lines().next()?.trim();
-                                if let Some(ref_path) = line.strip_prefix("ref: refs/heads/") {
-                                    return Some(ref_path.to_string());
-                                } else {
-                                    return Some(line.chars().take(8).collect::<String>());
-                                }
+                                return Some(current.join(path));
                             }
                         }
                     }
@@ -286,4 +269,18 @@ pub fn get_git_branch_fast(cwd: &str) -> Option<String> {
         }
         current = current.parent()?;
     }
+}
+
+pub fn get_git_branch_fast(cwd: &str) -> Option<String> {
+    let git_dir = find_git_dir(cwd)?;
+    let head_path = git_dir.join("HEAD");
+    if let Ok(content) = fs::read_to_string(head_path) {
+        let line = content.lines().next()?.trim();
+        if let Some(ref_path) = line.strip_prefix("ref: refs/heads/") {
+            return Some(ref_path.to_string());
+        } else {
+            return Some(line.chars().take(8).collect::<String>());
+        }
+    }
+    None
 }

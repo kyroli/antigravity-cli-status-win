@@ -19,6 +19,7 @@ impl Widget {
 pub fn get_visual_length(s: &str) -> usize {
     let mut len = 0;
     let mut in_ansi = false;
+    let mut in_osc = false;
     let mut chars = s.chars().peekable();
     while let Some(ch) = chars.next() {
         if ch == '\x1b' {
@@ -26,11 +27,22 @@ pub fn get_visual_length(s: &str) -> usize {
                 in_ansi = true;
                 chars.next();
                 continue;
+            } else if chars.peek() == Some(&']') {
+                in_osc = true;
+                chars.next();
+                continue;
             }
         }
         if in_ansi {
             if ch.is_ascii_alphabetic() {
                 in_ansi = false;
+            }
+            continue;
+        }
+        if in_osc {
+            if ch == '\x1b' && chars.peek() == Some(&'\\') {
+                in_osc = false;
+                chars.next();
             }
             continue;
         }

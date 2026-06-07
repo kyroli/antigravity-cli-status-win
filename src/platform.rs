@@ -199,6 +199,11 @@ pub struct SharedVcsInfo {
     pub behind: u32,
     pub modified: u32,
     pub last_checked: u64,
+    pub head_mtime: u64,
+    pub index_mtime: u64,
+    pub remote_web_url: [u8; 256],
+    pub insertions: u32,
+    pub deletions: u32,
 }
 
 #[repr(C)]
@@ -237,6 +242,14 @@ impl SharedCacheData {
             behind: self.vcs.behind,
             modified: self.vcs.modified,
             last_checked: self.vcs.last_checked,
+            head_mtime: if self.vcs.head_mtime == 0 { None } else { Some(self.vcs.head_mtime) },
+            index_mtime: if self.vcs.index_mtime == 0 { None } else { Some(self.vcs.index_mtime) },
+            remote_web_url: {
+                let s = bytes_to_str(&self.vcs.remote_web_url);
+                if s.is_empty() { None } else { Some(s) }
+            },
+            insertions: self.vcs.insertions,
+            deletions: self.vcs.deletions,
         });
 
         let needs_login = match self.needs_login {
@@ -281,6 +294,11 @@ impl SharedCacheData {
             behind: 0,
             modified: 0,
             last_checked: 0,
+            head_mtime: 0,
+            index_mtime: 0,
+            remote_web_url: [0; 256],
+            insertions: 0,
+            deletions: 0,
         };
 
         let has_vcs = if let Some(ref v) = data.vcs {
@@ -292,6 +310,11 @@ impl SharedCacheData {
                 behind: v.behind,
                 modified: v.modified,
                 last_checked: v.last_checked,
+                head_mtime: v.head_mtime.unwrap_or(0),
+                index_mtime: v.index_mtime.unwrap_or(0),
+                remote_web_url: v.remote_web_url.as_deref().map(str_to_bytes).unwrap_or([0; 256]),
+                insertions: v.insertions,
+                deletions: v.deletions,
             };
             1
         } else {
@@ -306,7 +329,7 @@ impl SharedCacheData {
 
         SharedCacheData {
             magic: 0x41475953,
-            version: 2,
+            version: 5,
             last_refreshed: data.last_refreshed,
             quota_count: quota_count as u32,
             quotas,
@@ -339,7 +362,7 @@ pub fn read_shared_cache() -> Option<CacheData> {
         }
         let shared_data = &*(view.Value as *const SharedCacheData);
         let mut result = None;
-        if shared_data.magic == 0x41475953 && shared_data.version == 2 {
+        if shared_data.magic == 0x41475953 && shared_data.version == 5 {
             result = Some(shared_data.to_cache_data());
         }
         UnmapViewOfFile(view);
