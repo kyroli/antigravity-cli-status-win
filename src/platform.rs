@@ -1,8 +1,11 @@
+// Win32 API wrappers: Credential Manager, Named Mutexes, Shared Memory IPC.
+
 use std::fs;
 use crate::types::{CacheData, QuotaItem, VcsInfo};
-use crate::utils::get_antigravity_dir;
+use crate::path::get_antigravity_dir;
 
 // --- Helper Functions for String/Byte Conversion in IPC ----------------------
+
 fn bytes_to_str(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes)
         .trim_end_matches('\0')
@@ -17,14 +20,14 @@ fn str_to_bytes<const N: usize>(s: &str) -> [u8; N] {
     bytes
 }
 
-// --- Platform Specific Win32 API Wrapper -------------------------------------
+// --- Process Status ----------------------------------------------------------
 
 pub fn is_pid_alive(pid: u32) -> bool {
     use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
     use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ACCESS_DENIED};
     unsafe {
         let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-        if handle != 0 {
+        if !handle.is_null() {
             CloseHandle(handle);
             true
         } else {
@@ -33,6 +36,8 @@ pub fn is_pid_alive(pid: u32) -> bool {
         }
     }
 }
+
+// --- Credential Manager ------------------------------------------------------
 
 fn read_windows_credential(target: &str) -> Option<String> {
     use std::ptr;
@@ -58,7 +63,7 @@ fn read_windows_credential(target: &str) -> Option<String> {
                     cred.CredentialBlob,
                     cred.CredentialBlobSize as usize,
                 );
-                
+
                 let token_str = if let Ok(s) = String::from_utf8(blob_slice.to_vec()) {
                     Some(s)
                 } else {
@@ -80,14 +85,16 @@ fn read_windows_credential(target: &str) -> Option<String> {
 
 pub fn get_access_token() -> Option<String> {
     if let Some(raw_cred) = read_windows_credential("gemini:antigravity")
-        .or_else(|| read_windows_credential("LegacyGeneric:target=gemini:antigravity")) {
+        .or_else(|| read_windows_credential("LegacyGeneric:target=gemini:antigravity"))
+    {
         if let Ok(parsed_json) = serde_json::from_str::<serde_json::Value>(&raw_cred) {
-            let access_token = parsed_json.get("token")
+            let access_token = parsed_json
+                .get("token")
                 .and_then(|t| t.get("access_token"))
                 .or_else(|| parsed_json.get("access_token"))
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
-            
+
             if let Some(tok) = access_token {
                 return Some(tok);
             }
@@ -98,24 +105,29 @@ pub fn get_access_token() -> Option<String> {
     let oauth_path = root.join("antigravity-oauth-token");
     if let Ok(data) = fs::read_to_string(oauth_path) {
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&data) {
-            if let Some(tok) = v.get("token").and_then(|t| t.get("access_token")).and_then(|s| s.as_str()) {
+            if let Some(tok) = v
+                .get("token")
+                .and_then(|t| t.get("access_token"))
+                .and_then(|s| s.as_str())
+            {
                 return Some(tok.to_string());
             }
         }
     }
-    let parent_oauth = root.parent().unwrap().join("oauth_creds.json");
-    if let Ok(data) = fs::read_to_string(parent_oauth) {
-        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&data) {
-            if let Some(tok) = v.get("access_token").and_then(|s| s.as_str()) {
-                return Some(tok.to_string());
+    if let Some(parent) = root.parent() {
+        let parent_oauth = parent.join("oauth_creds.json");
+        if let Ok(data) = fs::read_to_string(parent_oauth) {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&data) {
+                if let Some(tok) = v.get("access_token").and_then(|s| s.as_str()) {
+                    return Some(tok.to_string());
+                }
             }
         }
     }
-
     None
 }
 
-// --- Windows Named Mutex -----------------------------------------------------
+// --- Named Mutex -------------------------------------------------------------
 
 pub struct NamedMutex {
     handle: windows_sys::Win32::Foundation::HANDLE,
@@ -128,7 +140,7 @@ impl NamedMutex {
         let name_wide: Vec<u16> = name.encode_utf16().chain(Some(0)).collect();
         unsafe {
             let handle = OpenMutexW(0x0001, 0, name_wide.as_ptr());
-            if handle != 0 {
+            if !handle.is_null() {
                 CloseHandle(handle);
                 true
             } else {
@@ -143,7 +155,7 @@ impl NamedMutex {
         let name_wide: Vec<u16> = name.encode_utf16().chain(Some(0)).collect();
         unsafe {
             let handle = CreateMutexW(std::ptr::null(), 0, name_wide.as_ptr());
-            if handle == 0 {
+            if handle.is_null() {
                 return None;
             }
             if GetLastError() == ERROR_ALREADY_EXISTS {
@@ -166,7 +178,7 @@ impl Drop for NamedMutex {
     }
 }
 
-// --- Shared Memory IPC Structures --------------------------------------------
+// --- Shared Memory IPC -------------------------------------------------------
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -210,9 +222,9 @@ impl SharedCacheData {
                 let rt = bytes_to_str(&q.reset_time);
                 QuotaItem {
                     id: bytes_to_str(&q.id),
-                    displayName: bytes_to_str(&q.display_name),
-                    remainingFraction: q.remaining_fraction,
-                    resetTime: if rt.is_empty() { None } else { Some(rt) },
+                    display_name: bytes_to_str(&q.display_name),
+                    remaining_fraction: q.remaining_fraction,
+                    reset_time: if rt.is_empty() { None } else { Some(rt) },
                 }
             })
             .collect();
@@ -224,7 +236,7 @@ impl SharedCacheData {
             ahead: self.vcs.ahead,
             behind: self.vcs.behind,
             modified: self.vcs.modified,
-            lastChecked: self.vcs.last_checked,
+            last_checked: self.vcs.last_checked,
         });
 
         let needs_login = match self.needs_login {
@@ -236,7 +248,7 @@ impl SharedCacheData {
         CacheData {
             quota,
             vcs,
-            lastRefreshed: self.last_refreshed,
+            last_refreshed: self.last_refreshed,
             token_hash: None,
             needs_login,
         }
@@ -255,9 +267,9 @@ impl SharedCacheData {
             let q = &data.quota[i];
             quotas[i] = SharedQuotaItem {
                 id: str_to_bytes(&q.id),
-                display_name: str_to_bytes(&q.displayName),
-                remaining_fraction: q.remainingFraction,
-                reset_time: q.resetTime.as_deref().map(str_to_bytes).unwrap_or([0; 64]),
+                display_name: str_to_bytes(&q.display_name),
+                remaining_fraction: q.remaining_fraction,
+                reset_time: q.reset_time.as_deref().map(str_to_bytes).unwrap_or([0; 64]),
             };
         }
 
@@ -279,7 +291,7 @@ impl SharedCacheData {
                 ahead: v.ahead,
                 behind: v.behind,
                 modified: v.modified,
-                last_checked: v.lastChecked,
+                last_checked: v.last_checked,
             };
             1
         } else {
@@ -295,7 +307,7 @@ impl SharedCacheData {
         SharedCacheData {
             magic: 0x41475953,
             version: 2,
-            last_refreshed: data.lastRefreshed,
+            last_refreshed: data.last_refreshed,
             quota_count: quota_count as u32,
             quotas,
             has_vcs,
@@ -311,19 +323,16 @@ pub fn read_shared_cache() -> Option<CacheData> {
     };
     use windows_sys::Win32::Foundation::CloseHandle;
 
-    let name: Vec<u16> = "Local\\AgyStatuslineSharedCache".encode_utf16().chain(Some(0)).collect();
+    let name: Vec<u16> = "Local\\AgyStatuslineSharedCache"
+        .encode_utf16()
+        .chain(Some(0))
+        .collect();
     unsafe {
         let handle = OpenFileMappingW(FILE_MAP_READ, 0, name.as_ptr());
-        if handle == 0 {
+        if handle.is_null() {
             return None;
         }
-        let view = MapViewOfFile(
-            handle,
-            FILE_MAP_READ,
-            0,
-            0,
-            std::mem::size_of::<SharedCacheData>(),
-        );
+        let view = MapViewOfFile(handle, FILE_MAP_READ, 0, 0, std::mem::size_of::<SharedCacheData>());
         if view.Value.is_null() {
             CloseHandle(handle);
             return None;
@@ -346,7 +355,10 @@ pub fn write_shared_cache(data: &CacheData) -> bool {
     use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
     use std::ptr;
 
-    let name: Vec<u16> = "Local\\AgyStatuslineSharedCache".encode_utf16().chain(Some(0)).collect();
+    let name: Vec<u16> = "Local\\AgyStatuslineSharedCache"
+        .encode_utf16()
+        .chain(Some(0))
+        .collect();
     let size = std::mem::size_of::<SharedCacheData>();
     unsafe {
         let handle = CreateFileMappingW(
@@ -357,7 +369,7 @@ pub fn write_shared_cache(data: &CacheData) -> bool {
             size as u32,
             name.as_ptr(),
         );
-        if handle == 0 {
+        if handle.is_null() {
             return false;
         }
         let view = MapViewOfFile(handle, FILE_MAP_WRITE, 0, 0, size);

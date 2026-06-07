@@ -1,3 +1,6 @@
+// Filesystem path utilities, human-readable formatting, date parsing,
+// model name abbreviation, and fast git branch detection.
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
@@ -40,7 +43,9 @@ fn days_since_epoch(y: u64, m: u64, d: u64) -> u64 {
 }
 
 pub fn parse_rfc3339_to_unix(s: &str) -> Option<u64> {
-    if s.len() < 19 { return None; }
+    if s.len() < 19 {
+        return None;
+    }
     let year: u64 = s[0..4].parse().ok()?;
     let month: u64 = s[5..7].parse().ok()?;
     let day: u64 = s[8..10].parse().ok()?;
@@ -80,12 +85,12 @@ pub fn get_shorten_path(path_val: &str) -> String {
         .or_else(|_| std::env::var("HOME"))
         .unwrap_or_default()
         .replace('\\', "/");
-    
+
     let mut display_path = path_norm.clone();
     if !home.is_empty() && path_norm.starts_with(&home) {
         display_path = format!("~{}", &path_norm[home.len()..]);
     }
-    
+
     if display_path.len() > 25 {
         let parts: Vec<&str> = display_path.split('/').collect();
         if !parts.is_empty() {
@@ -111,7 +116,6 @@ pub fn get_configs_last_modified_time() -> u64 {
     if let Some(mtime) = get_file_mtime(&dir.join("antigravity-oauth-token")) {
         max_mtime = max_mtime.max(mtime);
     }
-
     if let Some(parent) = dir.parent() {
         if let Some(mtime) = get_file_mtime(&parent.join("oauth_creds.json")) {
             max_mtime = max_mtime.max(mtime);
@@ -120,31 +124,40 @@ pub fn get_configs_last_modified_time() -> u64 {
     max_mtime
 }
 
+// --- Model name abbreviation -------------------------------------------------
+
 fn find_case_insensitive(s: &str, pat_lower: &str) -> Option<usize> {
-    if pat_lower.is_empty() { return Some(0); }
+    if pat_lower.is_empty() {
+        return Some(0);
+    }
     let pat_len = pat_lower.len();
-    if s.len() < pat_len { return None; }
+    if s.len() < pat_len {
+        return None;
+    }
     s.as_bytes()
         .windows(pat_len)
         .position(|window| {
-            window.iter().zip(pat_lower.as_bytes()).all(|(&b, &p)| {
-                b.to_ascii_lowercase() == p
-            })
+            window
+                .iter()
+                .zip(pat_lower.as_bytes())
+                .all(|(&b, &p)| b.to_ascii_lowercase() == p)
         })
 }
 
-fn replace_ignore_case<'a>(s: std::borrow::Cow<'a, str>, from_lower: &str, to: &str) -> std::borrow::Cow<'a, str> {
+fn replace_ignore_case<'a>(
+    s: std::borrow::Cow<'a, str>,
+    from_lower: &str,
+    to: &str,
+) -> std::borrow::Cow<'a, str> {
     if let Some(idx) = find_case_insensitive(&s, from_lower) {
         let mut result = String::with_capacity(s.len());
         result.push_str(&s[..idx]);
         result.push_str(to);
-        let mut last_idx = idx + from_lower.len();
-        let mut current_s = &s[last_idx..];
+        let mut current_s = &s[idx + from_lower.len()..];
         while let Some(match_idx) = find_case_insensitive(current_s, from_lower) {
             result.push_str(&current_s[..match_idx]);
             result.push_str(to);
-            last_idx = match_idx + from_lower.len();
-            current_s = &current_s[last_idx..];
+            current_s = &current_s[match_idx + from_lower.len()..];
         }
         result.push_str(current_s);
         std::borrow::Cow::Owned(result)
@@ -155,7 +168,7 @@ fn replace_ignore_case<'a>(s: std::borrow::Cow<'a, str>, from_lower: &str, to: &
 
 pub fn get_short_model_name(raw_name: &str) -> String {
     let mut clean = std::borrow::Cow::Borrowed(raw_name);
-    
+
     let replacements = [
         ("-experimental", "-exp"),
         ("-latest", ""),
@@ -185,7 +198,10 @@ pub fn get_short_model_name(raw_name: &str) -> String {
     if lower.contains("gemini") {
         let is_flash = lower.contains("flash");
         let is_pro = lower.contains("pro");
-        if let Some(version) = clean.split_whitespace().find(|w| w.chars().any(|c| c.is_ascii_digit())) {
+        if let Some(version) = clean
+            .split_whitespace()
+            .find(|w| w.chars().any(|c| c.is_ascii_digit()))
+        {
             if is_flash {
                 clean = std::borrow::Cow::Owned(format!("Gem {}F", version));
             } else if is_pro {
@@ -193,10 +209,11 @@ pub fn get_short_model_name(raw_name: &str) -> String {
             }
         }
     } else if lower.contains("claude") {
-        let version = clean.split_whitespace()
+        let version = clean
+            .split_whitespace()
             .find(|w| w.chars().any(|c| c.is_ascii_digit()))
             .unwrap_or("");
-        
+
         let type_name = if lower.contains("sonnet") {
             Some("Sonnet")
         } else if lower.contains("haiku") {
@@ -226,6 +243,7 @@ pub fn get_short_model_name(raw_name: &str) -> String {
     }
 }
 
+// --- Fast git branch detection -----------------------------------------------
 
 pub fn get_git_branch_fast(cwd: &str) -> Option<String> {
     let mut current = Path::new(cwd);
@@ -258,7 +276,9 @@ pub fn get_git_branch_fast(cwd: &str) -> Option<String> {
                                 if let Some(ref_path) = line.strip_prefix("ref: refs/heads/") {
                                     return Some(ref_path.to_string());
                                 } else {
-                                    return Some(line[..std::cmp::min(8, line.len())].to_string());
+                                    return Some(
+                                        line[..std::cmp::min(8, line.len())].to_string(),
+                                    );
                                 }
                             }
                         }
@@ -266,12 +286,6 @@ pub fn get_git_branch_fast(cwd: &str) -> Option<String> {
                 }
             }
         }
-
-        if let Some(parent) = current.parent() {
-            current = parent;
-        } else {
-            break;
-        }
+        current = current.parent()?;
     }
-    None
 }

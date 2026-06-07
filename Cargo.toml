@@ -1,24 +1,23 @@
 [package]
-name = "agy-statusline"
-version = "1.0.0"
-edition = "2021"
+name = "antigravity-statusline-win11-rs"
+version = "1.1.0"
+edition = "2024"
 
 [lib]
-name = "agy_statusline_lib"
+name = "antigravity_statusline_win11_rs"
 path = "src/lib.rs"
 
 [[bin]]
 name = "statusline"
-path = "src/statusline.rs"
-
+path = "src/main.rs"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-ureq = { version = "3", features = ["json", "platform-verifier"] }
+ureq = { version = "3.3", features = ["json", "platform-verifier"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.52", features = [
+windows-sys = { version = "0.61", features = [
     "Win32_Security_Credentials",
     "Win32_Foundation",
     "Win32_System_Threading",
@@ -31,6 +30,3 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
-
-
-

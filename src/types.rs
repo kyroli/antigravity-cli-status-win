@@ -1,18 +1,20 @@
+// Data type definitions for JSON input, cache structures, and user configuration.
+
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Default, Clone)]
+#[derive(Deserialize, Serialize, Default, Clone)]
 pub struct Workspace {
     pub current_dir: Option<String>,
     pub project_dir: Option<String>,
 }
 
-#[derive(Deserialize, Default, Clone)]
+#[derive(Deserialize, Serialize, Default, Clone)]
 pub struct ModelInfo {
     pub id: Option<String>,
     pub display_name: Option<String>,
 }
 
-#[derive(Deserialize, Default, Clone)]
+#[derive(Deserialize, Serialize, Default, Clone)]
 pub struct CurrentUsage {
     pub cache_read_input_tokens: Option<u64>,
     pub cache_creation_input_tokens: Option<u64>,
@@ -20,7 +22,7 @@ pub struct CurrentUsage {
     pub output_tokens: Option<u64>,
 }
 
-#[derive(Deserialize, Default, Clone)]
+#[derive(Deserialize, Serialize, Default, Clone)]
 pub struct ContextWindow {
     pub used_percentage: Option<f64>,
     pub remaining_percentage: Option<f64>,
@@ -30,20 +32,20 @@ pub struct ContextWindow {
     pub current_usage: Option<CurrentUsage>,
 }
 
-#[derive(Deserialize, Default, Clone)]
+#[derive(Deserialize, Serialize, Default, Clone)]
 pub struct SandboxInfo {
     pub enabled: Option<bool>,
     pub allow_network: Option<bool>,
 }
 
-#[derive(Deserialize, Default, Clone)]
+#[derive(Deserialize, Serialize, Default, Clone)]
 pub struct AgentInfo {
     pub name: Option<String>,
     pub role: Option<String>,
     pub status: Option<String>,
 }
 
-#[derive(Deserialize, Default, Clone)]
+#[derive(Deserialize, Serialize, Default, Clone)]
 pub struct InputVcsInfo {
     #[serde(rename = "type")]
     pub vcs_type: Option<String>,
@@ -52,7 +54,7 @@ pub struct InputVcsInfo {
     pub dirty: Option<bool>,
 }
 
-#[derive(Deserialize, Default, Clone)]
+#[derive(Deserialize, Serialize, Default, Clone)]
 pub struct InputJson {
     pub agent_state: Option<String>,
     pub model: Option<ModelInfo>,
@@ -63,10 +65,10 @@ pub struct InputJson {
     pub agent: Option<AgentInfo>,
     pub vcs: Option<InputVcsInfo>,
     pub product: Option<String>,
-    pub artifacts: Option<Vec<serde::de::IgnoredAny>>,
+    pub artifacts: Option<Vec<serde_json::Value>>,
     pub artifact_count: Option<u32>,
-    pub subagents: Option<Vec<serde::de::IgnoredAny>>,
-    pub background_tasks: Option<Vec<serde::de::IgnoredAny>>,
+    pub subagents: Option<Vec<serde_json::Value>>,
+    pub background_tasks: Option<Vec<serde_json::Value>>,
     pub task_count: Option<u32>,
     pub tool_confirmation_pending: Option<bool>,
     pub pending_input_count: Option<u32>,
@@ -80,9 +82,12 @@ pub struct InputJson {
 #[derive(Deserialize, Serialize, Default, Clone)]
 pub struct QuotaItem {
     pub id: String,
-    pub displayName: String,
-    pub remainingFraction: f64,
-    pub resetTime: Option<String>,
+    #[serde(rename = "displayName")]
+    pub display_name: String,
+    #[serde(rename = "remainingFraction")]
+    pub remaining_fraction: f64,
+    #[serde(rename = "resetTime")]
+    pub reset_time: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Default, Clone)]
@@ -96,7 +101,8 @@ pub struct VcsInfo {
     pub behind: u32,
     #[serde(default)]
     pub modified: u32,
-    pub lastChecked: u64,
+    #[serde(rename = "lastChecked")]
+    pub last_checked: u64,
 }
 
 #[derive(Deserialize, Serialize, Default, Clone)]
@@ -104,8 +110,8 @@ pub struct CacheData {
     #[serde(default)]
     pub quota: Vec<QuotaItem>,
     pub vcs: Option<VcsInfo>,
-    #[serde(default)]
-    pub lastRefreshed: u64,
+    #[serde(default, rename = "lastRefreshed")]
+    pub last_refreshed: u64,
     #[serde(default)]
     pub token_hash: Option<String>,
     #[serde(default)]
@@ -141,7 +147,9 @@ pub struct UserConfig {
     pub theme: String,
 }
 
-fn default_theme() -> String { "frost".to_string() }
+fn default_theme() -> String {
+    "frost".to_string()
+}
 
 impl Default for UserConfig {
     fn default() -> Self {
@@ -152,7 +160,7 @@ impl Default for UserConfig {
 }
 
 pub fn load_user_config() -> UserConfig {
-    let path = crate::utils::resolve_antigravity_path("statusline.json");
+    let path = crate::path::resolve_antigravity_path("statusline.json");
     if path.exists() {
         if let Ok(content) = std::fs::read_to_string(&path) {
             if let Ok(config) = serde_json::from_str::<UserConfig>(&content) {
@@ -167,4 +175,3 @@ pub fn load_user_config() -> UserConfig {
     }
     UserConfig::default()
 }
-

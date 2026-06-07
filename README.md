@@ -89,7 +89,7 @@ Output binary: `target/release/statusline.exe`
 ## Security Verification
 
 ```powershell
-gh attestation verify statusline.exe --repo <github-username>/<repository-name>
+gh attestation verify statusline.exe --repo <github-username>/antigravity-statusline-win11-rs
 ```
 
 ## Requirements
