@@ -1,4 +1,7 @@
-# Antigravity CLI Statusline for Windows 11
+# Antigravity CLI Statusline for Windows 11 (Archived)
+
+> [!IMPORTANT]
+> This repository is archived and no longer maintained. It is preserved for legacy and commemorative purposes.
 
 TUI statusline and window title formatter for Antigravity CLI on Windows 11, implemented in Rust.
 
