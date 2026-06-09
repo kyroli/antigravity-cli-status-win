@@ -4,20 +4,31 @@ use std::fs;
 use std::io::Read;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::types::{parse_input_json, load_user_config, CacheData, InputJson};
+use crate::types::{parse_input_json, CacheData, InputJson};
+use crate::config::load_user_config;
 use crate::path::resolve_antigravity_path;
-use crate::platform::{read_shared_cache, NamedMutex};
+use crate::platform::{read_shared_cache, NamedMutex, CREATE_NO_WINDOW};
 use crate::render::render_tui;
 use crate::title::get_title_string;
 use crate::merge::merge_input_json;
-use crate::refresh::run_background_refresh;
+use crate::refresh::{run_background_refresh, QUOTA_REFRESH_INTERVAL_SECS};
+
+/// Maximum staleness (in seconds) for cached VCS data before triggering a refresh.
+const VCS_REFRESH_INTERVAL_SECS: u64 = 10;
+
+// --- Entry point -------------------------------------------------------------
 
 pub fn run() {
     let args: Vec<String> = std::env::args().collect();
 
+    if args.contains(&"--config".to_string()) {
+        crate::config::run_interactive_config();
+        return;
+    }
+
     if let Some(idx) = args.iter().position(|a| a == "--theme") {
         if idx + 1 < args.len() {
-            set_config_theme(&args[idx + 1]);
+            crate::config::set_config_theme(&args[idx + 1]);
             return;
         }
     }
@@ -38,8 +49,19 @@ pub fn run() {
         std::process::exit(0);
     }
 
+    // If no arguments matched, check if stdin is a terminal.
+    // If it is a terminal, the user ran it directly from the console, so show config.
+    // Otherwise, we are in statusline mode reading input from agy.
+    use std::io::IsTerminal;
+    if std::io::stdin().is_terminal() {
+        crate::config::run_interactive_config();
+        return;
+    }
+
     run_statusline_mode();
 }
+
+// --- Mode implementations ----------------------------------------------------
 
 fn run_title_mode() {
     let mut input_data = String::new();
@@ -123,7 +145,7 @@ fn run_statusline_mode() {
                     true
                 };
 
-                quota_age > 120 || mtime_changed || vcs_age > 10
+                quota_age > QUOTA_REFRESH_INTERVAL_SECS || mtime_changed || vcs_age > VCS_REFRESH_INTERVAL_SECS
             }
         };
 
@@ -152,7 +174,7 @@ fn spawn_background_refresh(raw_cwd: &str) {
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
-            cmd.creation_flags(0x08000000);
+            cmd.creation_flags(CREATE_NO_WINDOW);
 
             use std::os::windows::io::AsRawHandle;
             unsafe {
@@ -175,26 +197,5 @@ fn spawn_background_refresh(raw_cwd: &str) {
         }
 
         let _ = cmd.spawn();
-    }
-}
-
-fn set_config_theme(theme_name: &str) {
-    let mut config = load_user_config();
-    let theme_lower = theme_name.trim().to_lowercase();
-    let valid = matches!(theme_lower.as_str(), "frost" | "pastel" | "neon");
-    if valid {
-        config.theme = theme_lower;
-        let path = resolve_antigravity_path("statusline.json");
-        if let Ok(json_str) = serde_json::to_string_pretty(&config) {
-            let _ = std::fs::write(&path, json_str);
-            println!("Theme set to: '{}'", theme_name);
-        } else {
-            println!("Error serializing configuration.");
-        }
-    } else {
-        println!(
-            "Unknown theme name: '{}'. Valid options are: 'frost', 'pastel', 'neon'.",
-            theme_name
-        );
     }
 }

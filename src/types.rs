@@ -127,14 +127,6 @@ pub struct CacheData {
     #[serde(default)]
     pub needs_login: Option<bool>,
 }
-
-#[derive(Serialize, Deserialize)]
-pub struct LockContent {
-    pub pid: u32,
-    pub time: u64,
-    pub cwd: String,
-}
-
 pub fn parse_input_json(input: &str) -> InputJson {
     let clean_input = input.trim();
     let clean_input = clean_input.strip_prefix('\u{feff}').unwrap_or(clean_input);
@@ -151,33 +143,35 @@ pub fn parse_input_json(input: &str) -> InputJson {
 pub struct UserConfig {
     #[serde(default = "default_theme")]
     pub theme: String,
+    #[serde(default = "default_true", rename = "show_vcs")]
+    pub show_vcs: bool,
+    #[serde(default = "default_true", rename = "show_quota")]
+    pub show_quota: bool,
+    #[serde(default = "default_true", rename = "show_context")]
+    pub show_context: bool,
+    #[serde(default = "default_true", rename = "show_settings")]
+    pub show_settings: bool,
+    #[serde(default)]
+    pub saved_accounts: Vec<String>,
 }
 
 fn default_theme() -> String {
     "frost".to_string()
 }
 
+fn default_true() -> bool {
+    true
+}
+
 impl Default for UserConfig {
     fn default() -> Self {
         Self {
             theme: default_theme(),
+            show_vcs: true,
+            show_quota: true,
+            show_context: true,
+            show_settings: true,
+            saved_accounts: Vec::new(),
         }
     }
-}
-
-pub fn load_user_config() -> UserConfig {
-    let path = crate::path::resolve_antigravity_path("statusline.json");
-    if path.exists() {
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            if let Ok(config) = serde_json::from_str::<UserConfig>(&content) {
-                return config;
-            }
-        }
-    } else {
-        let default_config = UserConfig::default();
-        if let Ok(json_str) = serde_json::to_string_pretty(&default_config) {
-            let _ = std::fs::write(&path, json_str);
-        }
-    }
-    UserConfig::default()
 }

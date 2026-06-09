@@ -8,7 +8,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::types::{CacheData, QuotaItem, VcsInfo};
 use crate::crypto::sha256_hex;
 use crate::path::{resolve_antigravity_path, get_configs_last_modified_time, get_git_branch_fast};
-use crate::platform::{get_access_token, NamedMutex, write_shared_cache};
+use crate::platform::{get_access_token, NamedMutex, write_shared_cache, CREATE_NO_WINDOW};
+
+/// Minimum seconds between consecutive quota API fetches.
+pub const QUOTA_REFRESH_INTERVAL_SECS: u64 = 120;
 
 pub fn run_background_refresh(cwd_force: Option<String>) {
     #[cfg(windows)]
@@ -47,7 +50,7 @@ pub fn run_background_refresh(cwd_force: Option<String>) {
 
     let quota_age = now.saturating_sub(existing_cache.last_refreshed);
     let need_quota_fetch = (existing_cache.quota.is_empty()
-        || quota_age > 120
+        || quota_age > QUOTA_REFRESH_INTERVAL_SECS
         || last_config_update > cache_modified_secs
         || token_changed)
         && token_opt.is_some();
@@ -85,7 +88,7 @@ fn fetch_quota(token: &str, current_token_hash: &Option<String>, now: u64, cache
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(std::time::Duration::from_secs(6)))
         .http_status_as_error(false)
-        .user_agent("antigravity-statusline-win11-rs/1.1.0 windows/11")
+        .user_agent(&format!("antigravity-statusline-win11-rs/{} windows/11", env!("CARGO_PKG_VERSION")))
         .tls_config(
             TlsConfig::builder()
                 .root_certs(RootCerts::PlatformVerifier)
@@ -252,7 +255,7 @@ fn run_git_cmd(args: &[&str], cwd: &str) -> Option<String> {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        cmd.creation_flags(CREATE_NO_WINDOW);
     }
 
     let output = cmd.output().ok()?;

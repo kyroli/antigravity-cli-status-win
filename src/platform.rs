@@ -4,6 +4,23 @@ use std::fs;
 use crate::types::{CacheData, QuotaItem, VcsInfo};
 use crate::path::get_antigravity_dir;
 
+// --- Module-Level Constants --------------------------------------------------
+
+/// Shared memory object name for IPC between daemon and statusline reader.
+const SHARED_CACHE_NAME: &str = "Local\\AgyStatuslineSharedCache";
+
+/// Magic value identifying a valid SharedCacheData header ("AGYS" in ASCII).
+const SHARED_CACHE_MAGIC: u32 = 0x4147_5953;
+
+/// Protocol version written into SharedCacheData.
+const SHARED_CACHE_VERSION: u32 = 6;
+
+/// Suppress console window creation for spawned processes on Windows.
+pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// Win32 MUTEX_QUERY_STATE access right (0x0001).
+const MUTEX_QUERY_STATE: u32 = 0x0001;
+
 // --- Helper Functions for String/Byte Conversion in IPC ----------------------
 
 fn bytes_to_str(bytes: &[u8]) -> String {
@@ -20,26 +37,9 @@ fn str_to_bytes<const N: usize>(s: &str) -> [u8; N] {
     bytes
 }
 
-// --- Process Status ----------------------------------------------------------
-
-pub fn is_pid_alive(pid: u32) -> bool {
-    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
-    use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ACCESS_DENIED};
-    unsafe {
-        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-        if !handle.is_null() {
-            CloseHandle(handle);
-            true
-        } else {
-            let err = GetLastError();
-            err == ERROR_ACCESS_DENIED
-        }
-    }
-}
-
 // --- Credential Manager ------------------------------------------------------
 
-fn read_windows_credential(target: &str) -> Option<String> {
+pub fn read_windows_credential(target: &str) -> Option<String> {
     use std::ptr;
     use windows_sys::Win32::Security::Credentials::{
         CredFree, CredReadW, CRED_TYPE_GENERIC, CREDENTIALW,
@@ -81,6 +81,36 @@ fn read_windows_credential(target: &str) -> Option<String> {
         }
     }
     None
+}
+
+pub fn write_windows_credential(target: &str, blob_str: &str) -> bool {
+    use std::ptr;
+    use windows_sys::Win32::Security::Credentials::{
+        CredWriteW, CRED_TYPE_GENERIC, CREDENTIALW, CRED_PERSIST_LOCAL_MACHINE,
+    };
+
+    let target_wide: Vec<u16> = target.encode_utf16().chain(Some(0)).collect();
+    let blob_bytes = blob_str.as_bytes();
+    
+    let credential = CREDENTIALW {
+        Flags: 0,
+        Type: CRED_TYPE_GENERIC,
+        TargetName: target_wide.as_ptr() as *mut _,
+        Comment: ptr::null_mut(),
+        LastWritten: windows_sys::Win32::Foundation::FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 },
+        CredentialBlobSize: blob_bytes.len() as u32,
+        CredentialBlob: blob_bytes.as_ptr() as *mut _,
+        Persist: CRED_PERSIST_LOCAL_MACHINE,
+        AttributeCount: 0,
+        Attributes: ptr::null_mut(),
+        TargetAlias: ptr::null_mut(),
+        UserName: ptr::null_mut(),
+    };
+
+    unsafe {
+        let res = CredWriteW(&credential as *const _ as *mut _, 0);
+        res != 0
+    }
 }
 
 pub fn get_access_token() -> Option<String> {
@@ -139,7 +169,7 @@ impl NamedMutex {
         use windows_sys::Win32::Foundation::CloseHandle;
         let name_wide: Vec<u16> = name.encode_utf16().chain(Some(0)).collect();
         unsafe {
-            let handle = OpenMutexW(0x0001, 0, name_wide.as_ptr());
+            let handle = OpenMutexW(MUTEX_QUERY_STATE, 0, name_wide.as_ptr());
             if !handle.is_null() {
                 CloseHandle(handle);
                 true
@@ -329,8 +359,8 @@ impl SharedCacheData {
         };
 
         SharedCacheData {
-            magic: 0x41475953,
-            version: 6,
+            magic: SHARED_CACHE_MAGIC,
+            version: SHARED_CACHE_VERSION,
             seq: 0,
             last_refreshed: data.last_refreshed,
             quota_count: quota_count as u32,
@@ -348,7 +378,7 @@ pub fn read_shared_cache() -> Option<CacheData> {
     };
     use windows_sys::Win32::Foundation::CloseHandle;
 
-    let name: Vec<u16> = "Local\\AgyStatuslineSharedCache"
+    let name: Vec<u16> = SHARED_CACHE_NAME
         .encode_utf16()
         .chain(Some(0))
         .collect();
@@ -364,14 +394,14 @@ pub fn read_shared_cache() -> Option<CacheData> {
         }
         let shared_data = &*(view.Value as *const SharedCacheData);
         let mut result = None;
-        if shared_data.magic == 0x41475953 && shared_data.version == 6 {
+        if shared_data.magic == SHARED_CACHE_MAGIC && shared_data.version == SHARED_CACHE_VERSION {
             let mut attempts = 0;
             loop {
-                let seq1 = unsafe { std::ptr::read_volatile(&shared_data.seq) };
+                let seq1 = std::ptr::read_volatile(&shared_data.seq);
                 std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::SeqCst);
                 let cached = shared_data.to_cache_data();
                 std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::SeqCst);
-                let seq2 = unsafe { std::ptr::read_volatile(&shared_data.seq) };
+                let seq2 = std::ptr::read_volatile(&shared_data.seq);
                 if seq1 == seq2 && seq1 % 2 == 0 {
                     result = Some(cached);
                     break;
@@ -396,7 +426,7 @@ pub fn write_shared_cache(data: &CacheData) -> bool {
     use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
     use std::ptr;
 
-    let name: Vec<u16> = "Local\\AgyStatuslineSharedCache"
+    let name: Vec<u16> = SHARED_CACHE_NAME
         .encode_utf16()
         .chain(Some(0))
         .collect();
@@ -419,27 +449,21 @@ pub fn write_shared_cache(data: &CacheData) -> bool {
             return false;
         }
         let shared_data = view.Value as *mut SharedCacheData;
-        let mut current_seq = unsafe { std::ptr::read_volatile(&mut (*shared_data).seq) };
+        let mut current_seq = std::ptr::read_volatile(&mut (*shared_data).seq);
         if current_seq % 2 == 0 {
             current_seq = current_seq.wrapping_add(1);
         } else {
             current_seq = current_seq.wrapping_add(2);
         }
-        unsafe {
-            std::ptr::write_volatile(&mut (*shared_data).seq, current_seq);
-        }
+        std::ptr::write_volatile(&mut (*shared_data).seq, current_seq);
         std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::SeqCst);
 
         let mut new_data = SharedCacheData::from_cache_data(data);
         new_data.seq = current_seq;
-        unsafe {
-            std::ptr::write(shared_data, new_data);
-        }
+        std::ptr::write(shared_data, new_data);
         std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::SeqCst);
 
-        unsafe {
-            std::ptr::write_volatile(&mut (*shared_data).seq, current_seq.wrapping_add(1));
-        }
+        std::ptr::write_volatile(&mut (*shared_data).seq, current_seq.wrapping_add(1));
         UnmapViewOfFile(view);
         CloseHandle(handle);
         true

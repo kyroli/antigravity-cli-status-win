@@ -114,15 +114,16 @@ pub fn resolve(name: &str) -> Theme {
 
 pub fn get_icon(widget: &str) -> &'static str {
     match widget {
-        "vcs" => "\u{e0a0} ",
-        "path" => "\u{f07c} ",
-        "quota" => "\u{26a1}",
-        "context" => "\u{f061a} ",
-        "cache" => "\u{f0a0} ",
-        "artifacts" => "\u{f09d1} ",
-        "subagents" => "\u{f06a9} ",
-        "tasks" => "\u{f051b} ",
-        "sandbox" => "\u{f132} ",
+        "vcs" => "\u{e0a0}",
+        "path" => "\u{f07c}",
+        "quota" => "\u{f0e7}",
+        "context" => "\u{f061a}",
+        "cache" => "\u{f0a0}",
+        "artifacts" => "\u{f09d1}",
+        "subagents" => "\u{f06a9}",
+        "tasks" => "\u{f051b}",
+        "sandbox" => "\u{f132}",
+        "settings" => "\u{f013}",
         _ => "",
     }
 }

@@ -1,5 +1,5 @@
 // Filesystem path utilities, human-readable formatting, date parsing,
-// model name abbreviation, and fast git branch detection.
+// percent-encoding, and fast git branch detection.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -124,124 +124,6 @@ pub fn get_configs_last_modified_time() -> u64 {
     max_mtime
 }
 
-// --- Model name abbreviation -------------------------------------------------
-
-fn find_case_insensitive(s: &str, pat_lower: &str) -> Option<usize> {
-    if pat_lower.is_empty() {
-        return Some(0);
-    }
-    let pat_len = pat_lower.len();
-    if s.len() < pat_len {
-        return None;
-    }
-    s.as_bytes()
-        .windows(pat_len)
-        .position(|window| {
-            window
-                .iter()
-                .zip(pat_lower.as_bytes())
-                .all(|(&b, &p)| b.to_ascii_lowercase() == p)
-        })
-}
-
-fn replace_ignore_case<'a>(
-    s: std::borrow::Cow<'a, str>,
-    from_lower: &str,
-    to: &str,
-) -> std::borrow::Cow<'a, str> {
-    if let Some(idx) = find_case_insensitive(&s, from_lower) {
-        let mut result = String::with_capacity(s.len());
-        result.push_str(&s[..idx]);
-        result.push_str(to);
-        let mut current_s = &s[idx + from_lower.len()..];
-        while let Some(match_idx) = find_case_insensitive(current_s, from_lower) {
-            result.push_str(&current_s[..match_idx]);
-            result.push_str(to);
-            current_s = &current_s[match_idx + from_lower.len()..];
-        }
-        result.push_str(current_s);
-        std::borrow::Cow::Owned(result)
-    } else {
-        s
-    }
-}
-
-pub fn get_short_model_name(raw_name: &str) -> String {
-    let mut clean = std::borrow::Cow::Borrowed(raw_name);
-
-    let replacements = [
-        ("-experimental", "-exp"),
-        ("-latest", ""),
-        ("cloudcode-pa-internal", "cc-pa"),
-        ("(medium)", "(M)"),
-        ("(high)", "(H)"),
-        ("(low)", "(L)"),
-        ("(thinking)", "(Th)"),
-    ];
-
-    for (from, to) in replacements {
-        clean = replace_ignore_case(clean, from, to);
-    }
-
-    if let Some(preview_idx) = find_case_insensitive(&clean, "-preview") {
-        let rest = &clean[preview_idx + "-preview".len()..];
-        let mut digits_len = 0;
-        if rest.starts_with('-') {
-            digits_len = 1 + rest[1..].chars().take_while(|c| c.is_ascii_digit()).count();
-        }
-        let mut clean_str = clean.into_owned();
-        clean_str.replace_range(preview_idx..preview_idx + "-preview".len() + digits_len, "");
-        clean = std::borrow::Cow::Owned(clean_str);
-    }
-
-    let lower = clean.to_lowercase();
-    if lower.contains("gemini") {
-        let is_flash = lower.contains("flash");
-        let is_pro = lower.contains("pro");
-        if let Some(version) = clean
-            .split_whitespace()
-            .find(|w| w.chars().any(|c| c.is_ascii_digit()))
-        {
-            if is_flash {
-                clean = std::borrow::Cow::Owned(format!("Gem {}F", version));
-            } else if is_pro {
-                clean = std::borrow::Cow::Owned(format!("Gem {}P", version));
-            }
-        }
-    } else if lower.contains("claude") {
-        let version = clean
-            .split_whitespace()
-            .find(|w| w.chars().any(|c| c.is_ascii_digit()))
-            .unwrap_or("");
-
-        let type_name = if lower.contains("sonnet") {
-            Some("Sonnet")
-        } else if lower.contains("haiku") {
-            Some("Haiku")
-        } else if lower.contains("opus") {
-            Some("Opus")
-        } else {
-            None
-        };
-
-        if let Some(t) = type_name {
-            let next_val = if version.is_empty() {
-                t.to_string()
-            } else {
-                format!("{} {}", t, version)
-            };
-            clean = std::borrow::Cow::Owned(next_val);
-        }
-    }
-
-    let visual_chars: Vec<char> = clean.chars().collect();
-    if visual_chars.len() > 15 {
-        let truncated: String = visual_chars[..12].iter().collect();
-        format!("{}..", truncated)
-    } else {
-        clean.into_owned()
-    }
-}
 
 // --- Fast git branch detection -----------------------------------------------
 
@@ -283,4 +165,21 @@ pub fn get_git_branch_fast(cwd: &str) -> Option<String> {
         }
     }
     None
+}
+
+// --- Percent-encoding for file:// URIs ---------------------------------------
+
+pub fn percent_encode_path(path: &str) -> String {
+    let mut encoded = String::with_capacity(path.len() * 3);
+    for byte in path.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' | b':' => {
+                encoded.push(byte as char);
+            }
+            _ => {
+                encoded.push_str(&format!("%{:02X}", byte));
+            }
+        }
+    }
+    encoded
 }

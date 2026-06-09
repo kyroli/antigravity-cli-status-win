@@ -28,12 +28,12 @@ pub fn get_title_string(json: &InputJson) -> String {
     }
 
     let emoji = match state {
-        "initializing" => "\u{1f680}",
-        "idle" => "\u{1f634}",
-        "thinking" => "\u{1f914}",
-        "working" => "\u{1f3c3}",
-        "tool_use" => "\u{1f6e0}\u{fe0f}",
-        _ => "\u{1f916}",
+        "initializing" => "\u{f135}",
+        "idle" => "\u{f017}",
+        "thinking" => "\u{f0eb}",
+        "working" => "\u{f013}",
+        "tool_use" => "\u{f0ad}",
+        _ => "\u{f471}",
     };
 
     let mut agent_mode = String::new();
